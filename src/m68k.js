@@ -39,7 +39,6 @@ state.print = function(regs) {
     }, this);
 };
 state.reset = function() {
-    this.log('\n\n');
     this.all_registers.forEach(function(reg) {
         this[reg] = new BitvalN(32);
     }, this);

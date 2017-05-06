@@ -10,7 +10,6 @@ window.onload = function() {
     };
     document.getElementById('run').onclick = function() {
         function getvals(id) {
-            console.log(document.getElementById(id).value);
             var vals = document.getElementById(id).value.split('\n').filter(function(t) { return t.replace(/ /g, '').length>0; });
             if (vals.length !== 4) {
                 console.log(vals);
@@ -23,10 +22,6 @@ window.onload = function() {
         var output = getvals('output');
         if (!input || !output) return;
         text.textContent = 'Running...\n';
-        if (input.length != 4) {
-            console.log(input);
-            text.textContent = 'Invalid input...\n';
-        }
         window.setTimeout(function () {
             text.textContent = '';
             try {

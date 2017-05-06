@@ -1778,7 +1778,6 @@ window.onload = function () {
     };
     document.getElementById('run').onclick = function () {
         function getvals(id) {
-            console.log(document.getElementById(id).value);
             var vals = document.getElementById(id).value.split('\n').filter(function (t) {
                 return t.replace(/ /g, '').length > 0;
             });
@@ -1793,10 +1792,6 @@ window.onload = function () {
         var output = getvals('output');
         if (!input || !output) return;
         text.textContent = 'Running...\n';
-        if (input.length != 4) {
-            console.log(input);
-            text.textContent = 'Invalid input...\n';
-        }
         window.setTimeout(function () {
             text.textContent = '';
             try {
@@ -1850,7 +1845,6 @@ state.print = function (regs) {
     }, this);
 };
 state.reset = function () {
-    this.log('\n\n');
     this.all_registers.forEach(function (reg) {
         this[reg] = new BitvalN(32);
     }, this);
