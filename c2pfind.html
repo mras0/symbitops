@@ -1,0 +1,100 @@
+<html>
+    <head>
+        <script type="text/javascript" src="js/c2pfind.js"></script>
+        <script type="text/javascript">
+var oldonload = window.onload;
+window.onload = function() {
+    var default_output =
+                'a3b3c3d3e3f3g3h3 i3j3k3l3m3n3o3p3 q3r3s3t3u3v3w3x3 y3z3A3B3C3D3E3F3\n'+
+                'a2b2c2d2e2f2g2h2 i2j2k2l2m2n2o2p2 q2r2s2t2u2v2w2x2 y2z2A2B2C2D2E2F2\n'+
+                'a1b1c1d1e1f1g1h1 i1j1k1l1m1n1o1p1 q1r1s1t1u1v1w1x1 y1z1A1B1C1D1E1F1\n'+
+                'a0b0c0d0e0f0g0h0 i0j0k0l0m0n0o0p0 q0r0s0t0u0v0w0x0 y0z0A0B0C0D0E0F0\n';
+
+    var predefs=[
+        {
+            id: 'predef-n',
+            desc: 'Normal',
+            input:
+                'a3a2a1a0b3b2b1b0 c3c2c1c0d3d2d1d0 e3e2e1e0f3f2f1f0 g3g2g1g0h3h2h1h0\n'+
+                'i3i2i1i0j3j2j1j0 k3k2k1k0l3l2l1l0 m3m2m1m0n3n2n1n0 o3o2o1o0p3p2p1p0\n'+
+                'q3q2q1q0r3r2r1r0 s3s2s1s0t3t2t1t0 u3u2u1u0v3v2v1v0 w3w2w1w0x3x2x1x0\n'+
+                'y3y2y1y0z3z2z1z0 A3A2A1A0B3B2B1B0 C3C2C1C0D3D2D1D0 E3E2E1E0F3F2F1F0\n',
+            output: default_output
+        },
+        {
+            id: 'predef-s',
+            desc: 'Scrambled',
+            input:
+                'a3b3c3d3a2b2c2d2 a1b1c1d1a0b0c0d0 e3f3g3h3e2f2g2h2 e1f1g1h1e0f0g0h0\n'+
+                'i3j3k3l3i2j2k2l2 i1j1k1l1i0j0k0l0 m3n3o3p3m2n2o2p2 m1n1o1p1m0n0o0p0\n'+
+                'q3r3s3t3q2r2s2t2 q1r1s1t1q0r0s0t0 u3v3w3x3u2v2w2x2 u1v1w1x1u0v0w0x0\n'+
+                'y3z3A3B3y2z2A2B2 y1z1A1B1y0z0A0B0 C3D3E3F3C2D2E2F2 C1D1E1F1C0D0E0F0\n',
+            output: default_output
+        },
+        {
+            id: 'predef-r',
+            desc: 'RGBB',
+            input:
+                'R3R2R1R0G3G2G1G0 B3B2B1B0B3B2B1B0 r3r2r1r0g3g2g1g0 b3b2b1b0b3b2b1b0\n'+
+                'X3X2X1X0Y3Y2Y1Y0 Z3Z2Z1Z0Z3Z2Z1Z0 x3x2x1x0y3y2y1y0 z3z2z1z0z3z2z1z0\n'+
+                'D3D2D1D0E3E2E1E0 F3F2F1F0F3F2F1F0 d3d2d1d0e3e2e1e0 f3f2f1f0f3f2f1f0\n'+
+                'G3G2G1G0H3H2H1H0 I3I2I1I0I3I2I1I0 g3g2g1g0h3h2h1h0 i3i2i1i0i3i2i1i0\n',
+            output:
+                'R3G3B3B3r3g3b3b3 X3Y3Z3Z3x3y3z3z3 D3E3F3F3d3e3f3f3 G3H3I3I3g3h3i3i3\n'+
+                'R2G2B2B2r2g2b2b2 X2Y2Z2Z2x2y2z2z2 D2E2F2F2d2e2f2f2 G2H2I2I2g2h2i2i2\n'+
+                'R1G1B1B1r1g1b1b1 X1Y1Z1Z1x1y1z1z1 D1E1F1F1d1e1f1f1 G1H1I1I1g1h1i1i1\n'+
+                'R0G0B0B0r0g0b0b0 X0Y0Z0Z0x0y0z0z0 D0E0F0F0d0e0f0f0 G0H0I0I0g0h0i0i0\n',
+        },
+        {
+            id:     'predef-b',
+            desc:   'Blank',
+            input:  '',
+            output: '',
+        },
+    ];
+    var pform = document.getElementById('predefs');
+    console.log(pform.innerHTML);
+    predefs.forEach(function(p) {
+        var label = document.createElement('label');
+        var elem = document.createElement('input');
+        elem.setAttribute('type', 'radio');
+        elem.setAttribute('name', 'predefined');
+        elem.setAttribute('value', p.id);
+        elem.setAttribute('id', p.id);
+        label.appendChild(elem);
+        label.appendChild(document.createTextNode(p.desc));
+        pform.appendChild(label);
+        elem.onclick = function() {
+            console.log(p.id + ' clicked!');
+            document.getElementById('input').value = p.input;
+            document.getElementById('output').value = p.output;
+        };
+    });
+    document.getElementById(predefs[0].id).click();
+    oldonload();
+};
+        </script>
+    </head>
+    <body>
+        <div style="display: table">
+            Predefined:<br>
+            <form action="" id="predefs">
+            </form>
+        </div>
+        <div style="display: table; width: 100%">
+            <div style="float: left; width: 50%">
+                <p>Input:</p>
+                <textarea id="input" rows="4" cols="70" style="overflow:hidden">
+                </textarea>
+            </div>
+            <div style="float: right; width: 50%">
+                <p>Output:</p>
+                <textarea id="output" rows="4" cols="70" style="overflow:hidden">
+                </textarea>
+            </div>
+        </div>
+        <div style="display: table; margin-top: 20px">
+            <button id="run" type="button">Run!</button>
+        </div>
+    </body>
+</html>

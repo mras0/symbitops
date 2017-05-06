@@ -1,0 +1,17 @@
+{
+  "name": "symbitops",
+  "version": "0.0.1",
+  "author": "Michael Rasmussen <michaelrasmussen1337@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "babel-cli": "^6.24.1",
+    "babel-preset-env": "^1.4.0",
+    "babelify": "^7.3.0",
+    "browserify": "^14.3.0"
+  },
+  "scripts": {
+    "build": "browserify -t [ babelify [ --presets env ] ] src/c2pfind.web.js  --outfile js/c2pfind.js && browserify -t [ babelify [ --presets env ] ] src/m68k.web.js  --outfile js/m68k.js",
+    "test": "node src/bitval.test.js && node src/bitvaln.test.js && node src/m68k.test.js",
+    "long-test": "npm run test && node src/c2pfind.test.js"
+  }
+}

@@ -1,0 +1,59 @@
+<html>
+    <head>
+        <script type="text/javascript" src="js/m68k.js"></script>
+        <script type="text/javascript">
+var oldonload = window.onload;
+window.onload = function() {
+    oldonload();
+    var codeElem = document.getElementById('code');
+    codeElem.onkeyup = function(e) {
+        // Run code on CTRL+enter
+        if (e.ctrlKey && e.keyCode == 13) {
+            document.getElementById('run').click();
+        }
+    };
+    document.getElementById('clear').onclick = function() {
+        codeElem.value = '';
+    };
+};
+        </script>
+    </head>
+    <body>
+        <div style="display: table; width: 100%">
+            <textarea id="code" rows="24" cols="120" style="resize: both; overflow: auto">// Enter M68K-like javascript here. Ctrl+Enter runs the code.
+//
+state.print() // print all registers
+MOVE.L(42,D0) // numeric constants allowed for source
+ADD.W(60,D0)
+
+// state.logcalls state.writeline() if not state.quiet
+state.log('We computed: ' + state[D0].real_value())
+
+// named bits (.. = zero, !! = one, ?? = unknown)
+MOVE.W('........R3R2R1R0 G3G2G1G0B3B2B1B0',D1)
+LSR.W(4,D1)
+AND.B(15,D1)
+
+// only print some registers
+state.print([D0,D1])
+// check output
+assert.equal(''+state[D1].get(8), '........G3G2G1G0')
+
+// built-in C2P helpers (use temp register T0):
+MOVE.L('a7a6a5a4a3a2a1a0 b7b6b5b4b3b2b1b0 c7c6c5c4c3c2c1c0 d7d6d5d4d3d2d1d0', D0)
+MOVE.L('e7e6e5e4e3e2e1e0 f7f6f5f4f3f2f1f0 g7g6g5g4g3g2g1g0 h7h6h5h4h3h2h1h0', D1)
+MOVE.L('i7i6i5i4i3i2i1i0 j7j6j5j4j3j2j1j0 k7k6k5k4k3k2k1k0 l7l6l5l4l3l2l1l0', D2)
+MOVE.L('m7m6m5m4m3m2m1m0 n7n6n5n4n3n2n1n0 o7o6o5o4o3o2o1o0 p7p6p5p4p3p2p1p0', D3)
+c2p_step4(8, 2); // 8x2, c2p_step8 also available (for working on d0-d7 registers)
+state.log('\nOne small step for mankind!\n')
+swap_and_merge(D0, D1, 4); // First step of 4x1
+
+// Advanced use: TX = state.make_register('TX')
+// to make another temp register</textarea>
+        </div>
+        <div style="display: table; margin-top: 20px">
+            <button id="run" type="button">Run!</button> &nbsp;
+            <button id="clear" type="button">Clear!</button>
+        </div>
+    </body>
+</html>
