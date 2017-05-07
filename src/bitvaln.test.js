@@ -22,3 +22,19 @@ assert.deepEqual(BitvalN.named('R2R1R0..'), bvn32_r4.add(bvn32_r4));
 assert(BitvalN.constN(4, 3).equals(BitvalN.named('....!!!!')));
 assert.deepEqual(BitvalN.constN(4, 15), BitvalN.constN(4, 3).add(BitvalN.constN(4, 12)));
 assert.equal('!!!!!!....!!', ''+BitvalN.constN(4, 9).sign_extend(6));
+
+let bvn8_123 = BitvalN.constN(8, 123);
+
+assert.equal(bvn8_123.not().real_value(), 132);
+
+assert.equal(bvn8_123.neg().sign_extend(32).real_value()>>0, -123);
+
+assert.equal(bvn8_123.add(BitvalN.constN(8, 2)).real_value(), 125);
+assert.equal(bvn8_123.add(BitvalN.constN(8, -2)).real_value(), 121);
+
+assert.equal(bvn8_123.sub(BitvalN.constN(8, 4)).real_value(), 119);
+assert.equal(bvn8_123.sub(BitvalN.constN(8, -4)).real_value(), 127);
+
+let bvn8_m33 = BitvalN.constN(8, -33);
+assert.equal(bvn8_m33.asr(2).sign_extend(32).real_value()>>0, -9);
+assert.equal(bvn8_m33.asl(1).sign_extend(32).real_value()>>0, -33*2);

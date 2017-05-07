@@ -89,4 +89,6 @@ assert.deepEqual([bv_0, bv_1], bv_0.half_add(bv_1));
 assert.deepEqual([bv_1, bv_0], bv_1.half_add(bv_1));
 assert.deepEqual([bv_xy, bv_0], bv_xy.half_add(bv_xy));
 
-
+// Not
+assert.deepEqual(bv_1, bv_0.not());
+assert.deepEqual(bv_0, bv_1.not());

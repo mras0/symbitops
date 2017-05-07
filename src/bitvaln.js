@@ -105,6 +105,13 @@ class BitvalN {
 
     }
 
+    not() {
+        let res = new BitvalN(this.nbits());
+        for (let i = 0; i < this.nbits(); ++i) {
+            res.bit[i] = this.bit[i].not();
+        }
+        return res;
+    }
 
     // TODO: Refactor and/or/xor ...
     and(rhs) {
@@ -143,6 +150,16 @@ class BitvalN {
         return res;
     }
 
+    neg() {
+        return this.not().add(BitvalN.constN(this.nbits(), 1));
+    }
+
+    sub(rhs) {
+        return this.add(rhs.neg());
+    }
+
+    // Positive shift is to the right here, negative to the left
+
     logical_shift(rhs) {
         if (typeof rhs !== 'number') {
             throw new Error('Invalid rhs in logical_shift: ' + rhs);
@@ -151,6 +168,24 @@ class BitvalN {
         for (let i = 0; i < this.nbits(); ++i) {
             let src = i + rhs;
             res.bit[i] = src < 0 || src >= this.nbits() ? new Bitval(0) : this.bit[src];
+        }
+        return res;
+    }
+
+    arithmetic_shift(rhs) {
+        if (typeof rhs !== 'number') {
+            throw new Error('Invalid rhs in arithmetic_shift: ' + rhs);
+        }
+        let res = new BitvalN(this.nbits());
+        for (let i = 0; i < this.nbits(); ++i) {
+            let src = i + rhs;
+            if (src < 0) {
+                res.bit[i] = new Bitval(0);
+            } else if (src >= this.nbits()) {
+                res.bit[i] = this.bit[this.nbits()-1];
+            } else {
+                res.bit[i] = this.bit[src];
+            }
         }
         return res;
     }
@@ -178,6 +213,20 @@ class BitvalN {
             rhs = rhs.real_value();
         }
         return this.logical_shift(-rhs);
+    }
+
+    asr(rhs) {
+        if (rhs instanceof BitvalN) {
+            rhs = rhs.real_value();
+        }
+        return this.arithmetic_shift(rhs);
+    }
+
+    asl(rhs) {
+        if (rhs instanceof BitvalN) {
+            rhs = rhs.real_value();
+        }
+        return this.arithmetic_shift(-rhs);
     }
 
     ror(rhs) {

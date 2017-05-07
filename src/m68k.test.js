@@ -1,10 +1,12 @@
 const assert = require('assert');
 require('./m68k_global')
 
+// MOVE
 state.reset();
 MOVE(42, D0);
 assert.equal(''+state[D0], '???????????????? ???????????????? ................ ....!!..!!..!!..');
 
+// NOT
 state.reset();
 MOVE.L(0, D0);
 NOT.W(D0);
@@ -14,6 +16,7 @@ assert.equal(''+state[D0], '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! ................ .
 NOT.B(D0);
 assert.equal(''+state[D0], '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! ................ !!!!!!!!!!!!!!!!');
 
+// NEG/ADD
 state.reset();
 MOVE.L(0, D0);
 NEG.L(D0);
@@ -23,17 +26,102 @@ assert.equal(''+state[D0], '................ ................ ................ .
 NEG.L(D0);
 assert.equal(''+state[D0], '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!!');
 
+// SUB
 state.reset();
 MOVE.L(42, D0);
 SUB.W(60, D0);
 assert.equal(state[D0].get(16).real_value(), 0xFFEE);
 assert.equal(state[D0].real_value(), 0xFFEE);
 
+// ADDQ/SUBQ
+state.reset();
+assert.throws(() => { ADDQ(0, D0); }, /range/);
+assert.throws(() => { SUBQ(9, D0); }, /range/);
+MOVEQ(42, D0);
+ADDQ.L(1, D0);
+assert.equal(state[D0].real_value(), 43);
+MOVEQ(5, D0);
+SUBQ.B(7, D0);
+assert.equal(''+state[D0], '................ ................ ................ !!!!!!!!!!!!!!..'); // -2.b
+
+// MOVEQ
 state.reset();
 MOVEQ(127, D0);
 MOVEQ(-8, D1);
 assert.equal(state[D0].real_value(), 127);
 assert.equal(state[D1].real_value(), 0xFFFFFFF8);
+assert.throws(() => { MOVEQ(128, D0); }, /range/);
+assert.throws(() => { MOVEQ(-129, D0); }, /range/);
+
+// CLR
+state.reset();
+MOVEQ(-1, D0);
+CLR.B(D0);
+assert.equal(''+state[D0], '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! ................');
+MOVEQ(-1, D0);
+CLR.W(D0);
+assert.equal(''+state[D0], '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! ................ ................');
+MOVEQ(-1, D0);
+CLR.L(D0);
+assert.equal(''+state[D0], '................ ................ ................ ................');
+
+// Shift/rotate
+state.reset();
+MOVEQ(2, D0);
+LSL.L(2, D0);
+assert.equal(state[D0].real_value(), 8);
+ROR.L(4, D0);
+assert.equal(state[D0].real_value(), 0x80000000);
+
+MOVEQ(-4, D0);
+LSR.L(1, D0);
+assert.equal(state[D0].real_value(), 0x7ffffffe);
+
+MOVEQ(-15, D0);
+ASR.L(2, D0);
+assert.equal(state[D0].real_value()>>0, -4);
+
+ASL.L(8, D0);
+assert.equal(state[D0].real_value()>>0, -1024);
+
+assert.throws(() => { LSL(0, D0); }, /range/);
+assert.throws(() => { LSL(9, D0); }, /range/);
+
+state.reset();
+state.quiet = false;
+MOVE.B(2, D0);
+MOVEQ(60, D1);
+LSR.L(D0, D1);
+assert.equal(''+state[D1], '................ ................ ................ ........!!!!!!!!');
+MOVE.B(128+4, D2);
+ASL.L(D2, D1);
+assert.equal(''+state[D1], '................ ................ ................ !!!!!!!!........');
+
+
+// EXG
+state.reset();
+MOVEQ(42, D0);
+MOVEQ(60, D1);
+EXG(D0, D1);
+assert.equal(state[D0].real_value(), 60);
+assert.equal(state[D1].real_value(), 42);
+
+// EXT
+state.reset();
+MOVE.B(17, D0);
+assert.equal(state[D0]+'', '???????????????? ???????????????? ???????????????? ......!!......!!');
+EXT(D0);
+assert.equal(state[D0]+'', '???????????????? ???????????????? ................ ......!!......!!');
+EXT.L(D0);
+assert.equal(state[D0]+'', '................ ................ ................ ......!!......!!');
+
+MOVE.B(-2, D1);
+assert.equal(state[D1]+'', '???????????????? ???????????????? ???????????????? !!!!!!!!!!!!!!..');
+EXT(D1);
+assert.equal(state[D1]+'', '???????????????? ???????????????? !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!..');
+EXT.L(D1);
+assert.equal(state[D1]+'', '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!..');
+
 //
 // 8-bit C2P
 //

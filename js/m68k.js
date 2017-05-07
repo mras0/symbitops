@@ -1391,6 +1391,10 @@ class Bitval {
         throw new Error('Unsupported bitval ' + val);
     }
 
+    not() {
+        return this.xor(new Bitval(BITVAL_KNOWN1));
+    }
+
     and(rhs) {
         if (this.val === BITVAL_KNOWN0 || rhs.val === BITVAL_KNOWN0) {
             return new Bitval(0);
@@ -1572,6 +1576,14 @@ class BitvalN {
         return res;
     }
 
+    not() {
+        let res = new BitvalN(this.nbits());
+        for (let i = 0; i < this.nbits(); ++i) {
+            res.bit[i] = this.bit[i].not();
+        }
+        return res;
+    }
+
     // TODO: Refactor and/or/xor ...
     and(rhs) {
         let res = new BitvalN(this.nbits());
@@ -1609,6 +1621,16 @@ class BitvalN {
         return res;
     }
 
+    neg() {
+        return this.not().add(BitvalN.constN(this.nbits(), 1));
+    }
+
+    sub(rhs) {
+        return this.add(rhs.neg());
+    }
+
+    // Positive shift is to the right here, negative to the left
+
     logical_shift(rhs) {
         if (typeof rhs !== 'number') {
             throw new Error('Invalid rhs in logical_shift: ' + rhs);
@@ -1617,6 +1639,24 @@ class BitvalN {
         for (let i = 0; i < this.nbits(); ++i) {
             let src = i + rhs;
             res.bit[i] = src < 0 || src >= this.nbits() ? new Bitval(0) : this.bit[src];
+        }
+        return res;
+    }
+
+    arithmetic_shift(rhs) {
+        if (typeof rhs !== 'number') {
+            throw new Error('Invalid rhs in arithmetic_shift: ' + rhs);
+        }
+        let res = new BitvalN(this.nbits());
+        for (let i = 0; i < this.nbits(); ++i) {
+            let src = i + rhs;
+            if (src < 0) {
+                res.bit[i] = new Bitval(0);
+            } else if (src >= this.nbits()) {
+                res.bit[i] = this.bit[this.nbits() - 1];
+            } else {
+                res.bit[i] = this.bit[src];
+            }
         }
         return res;
     }
@@ -1644,6 +1684,20 @@ class BitvalN {
             rhs = rhs.real_value();
         }
         return this.logical_shift(-rhs);
+    }
+
+    asr(rhs) {
+        if (rhs instanceof BitvalN) {
+            rhs = rhs.real_value();
+        }
+        return this.arithmetic_shift(rhs);
+    }
+
+    asl(rhs) {
+        if (rhs instanceof BitvalN) {
+            rhs = rhs.real_value();
+        }
+        return this.arithmetic_shift(-rhs);
     }
 
     ror(rhs) {
@@ -1724,6 +1778,15 @@ function get_size_postfix(size) {
     }
 }
 
+state.log_instruction = function (name, sizestr, operands, result) {
+    if (typeof result === 'undefined') {
+        result = '';
+    } else {
+        result = '\t; ' + result;
+    }
+    this.log('\t' + name + sizestr + '\t' + rightpad(operands, MAX_INSTRUCTION_LENGTH) + result);
+};
+
 state.do_unary_op = function (name, size, dst, f) {
     let sizestr = '';
     if (typeof size === 'undefined') {
@@ -1732,7 +1795,7 @@ state.do_unary_op = function (name, size, dst, f) {
         sizestr = get_size_postfix(size);
         state[dst] = state[dst].set(f(state[dst].get(size)));
     }
-    this.log('\t' + name + sizestr + '\t' + rightpad(dst, MAX_INSTRUCTION_LENGTH) + '\t; ' + dst + ' = ' + state[dst]);
+    this.log_instruction(name, sizestr, dst, dst + ' = ' + state[dst]);
 };
 
 state.do_binary_op = function (name, size, src, dst, f) {
@@ -1756,7 +1819,7 @@ state.do_binary_op = function (name, size, src, dst, f) {
     }
 
     state[dst] = state[dst].set(f(src, state[dst].get(size)));
-    this.log('\t' + name + sizestr + '\t' + rightpad(srctext + ', ' + dst, MAX_INSTRUCTION_LENGTH) + '\t; ' + dst + ' = ' + state[dst]);
+    this.log_instruction(name, sizestr, srctext + ', ' + dst, dst + ' = ' + state[dst]);
 };
 
 function make_normal_unary_op(name, f) {
@@ -1770,21 +1833,43 @@ function make_normal_unary_op(name, f) {
     func.L = function (dst) {
         state.do_unary_op(name, 32, dst, f);
     };
+    exports[name] = func;
     return func;
 }
 
-function make_normal_binary_op(name, f) {
+function make_normal_binary_op(name, f, src_check) {
     var func = function (src, dst) {
+        if (src_check) src_check(name, src);
         state.do_binary_op(name, 16, src, dst, f);
     };
     func.B = function (src, dst) {
+        if (src_check) src_check(name, src);
         state.do_binary_op(name, 8, src, dst, f);
     };
     func.W = func;
     func.L = function (src, dst) {
+        if (src_check) src_check(name, src);
         state.do_binary_op(name, 32, src, dst, f);
     };
+    exports[name] = func;
     return func;
+};
+
+function check_immediate(name, val, min_allowed, max_allowed) {
+    if (typeof val !== 'number' || val < min_allowed || val > max_allowed) {
+        throw new Error('Immediate out of range (' + min_allowed + ' - ' + max_allowed + ') for ' + name + ': ' + val);
+    }
+};
+
+function check_small_arg(name, val) {
+    if (typeof val === 'number') {
+        // immediate
+        check_immediate(name, val, 1, 8);
+    } else if (state.all_registers.indexOf(val) !== -1) {
+        // register OK
+    } else {
+        throw new Error('Invalid argument to ' + name + ': ' + val);
+    }
 };
 
 //
@@ -1806,55 +1891,89 @@ exports.const32 = function (val) {
 //
 // Instructions
 //
-exports.MOVE = make_normal_binary_op('MOVE', function (src, dst) {
+make_normal_binary_op('MOVE', function (src, dst) {
     return src;
 });
+make_normal_binary_op('OR', function (src, dst) {
+    return dst.or(src);
+});
+make_normal_binary_op('AND', function (src, dst) {
+    return dst.and(src);
+});
+make_normal_binary_op('EOR', function (src, dst) {
+    return dst.xor(src);
+});
+make_normal_binary_op('ADD', function (src, dst) {
+    return dst.add(src);
+});
+make_normal_binary_op('SUB', function (src, dst) {
+    return dst.sub(src);
+});
+make_normal_binary_op('ADDQ', function (src, dst) {
+    return dst.add(src);
+}, check_small_arg);
+make_normal_binary_op('SUBQ', function (src, dst) {
+    return dst.sub(src);
+}, check_small_arg);
+make_normal_binary_op('LSR', function (src, dst) {
+    return dst.lsr(src.get(6));
+}, check_small_arg);
+make_normal_binary_op('LSL', function (src, dst) {
+    return dst.lsl(src.get(6));
+}, check_small_arg);
+make_normal_binary_op('ASR', function (src, dst) {
+    return dst.asr(src.get(6));
+}, check_small_arg);
+make_normal_binary_op('ASL', function (src, dst) {
+    return dst.asl(src.get(6));
+}, check_small_arg);
+make_normal_binary_op('ROR', function (src, dst) {
+    return dst.ror(src.get(6));
+}, check_small_arg);
+make_normal_binary_op('ROL', function (src, dst) {
+    return dst.rol(src.get(6));
+}, check_small_arg);
+make_normal_unary_op('NOT', function (dst) {
+    return dst.not();
+});
+make_normal_unary_op('NEG', function (dst) {
+    return dst.neg();
+});
+make_normal_unary_op('CLR', function (dst) {
+    return BitvalN.constN(dst.nbits(), 0);
+});
+make_normal_unary_op('EXT', function (dst) {
+    return dst.get(dst.nbits() / 2).sign_extend(dst.nbits());
+});
+delete exports.EXT.B; // EXT.B is not legal
+
+// Instructions that require special handling
+
 exports.MOVEQ = function (src, dst) {
-    if (typeof src !== 'number' || src < -128 || src > 127) {
-        throw new Error('Invalid source operand for MOVEQ: ' + src);
-    }
+    check_immediate('MOVEQ', src, -128, 127);
     state.do_binary_op('MOVEQ', undefined, src, dst, function (s, d) {
         return BitvalN.constN(8, src).sign_extend(32);
     });
 };
-exports.OR = make_normal_binary_op('OR', function (src, dst) {
-    return dst.or(src);
-});
-exports.AND = make_normal_binary_op('AND', function (src, dst) {
-    return dst.and(src);
-});
-exports.EOR = make_normal_binary_op('EOR', function (src, dst) {
-    return dst.xor(src);
-});
-exports.ADD = make_normal_binary_op('ADD', function (src, dst) {
-    return dst.add(src);
-});
-exports.SUB = make_normal_binary_op('SUB', function (src, dst) {
-    return dst.add(src.xor(BitvalN.constN(src.nbits(), 0xFFFFFFFF)).add(BitvalN.constN(src.nbits(), 1)));
-});
-exports.LSR = make_normal_binary_op('LSR', function (src, dst) {
-    return dst.lsr(src);
-});
-exports.LSL = make_normal_binary_op('LSL', function (src, dst) {
-    return dst.lsl(src);
-});
-exports.ROR = make_normal_binary_op('ROR', function (src, dst) {
-    return dst.ror(src);
-});
-exports.ROL = make_normal_binary_op('ROL', function (src, dst) {
-    return dst.rol(src);
-});
+exports.MOVEQ.L = exports.MOVEQ;
+
 exports.SWAP = function (dst) {
     return state.do_unary_op('SWAP', undefined, dst, function (dst) {
         return dst.rotate(16);
     });
 };
-exports.NOT = make_normal_unary_op('NOT', function (dst) {
-    return dst.xor(BitvalN.constN(dst.nbits(), 0xFFFFFFFF));
-});
-exports.NEG = make_normal_unary_op('NEG', function (dst) {
-    return dst.xor(BitvalN.constN(dst.nbits(), 0xFFFFFFFF)).add(BitvalN.constN(dst.nbits(), 1));
-});
+exports.SWAP.W = exports.SWAP;
+
+exports.EXG = function (src, dst) {
+    let a = state[src];
+    if (!(a instanceof BitvalN)) throw new Error('Invalid operand to EXG: ' + src);
+    let b = state[dst];
+    if (!(b instanceof BitvalN)) throw new Error('Invalid operand to EXG: ' + dst);
+    state[src] = b;
+    state[dst] = a;
+    state.log_instruction('EXG', '', src + ', ' + dst);
+};
+exports.EXG.L = exports.EXG;
 
 //
 // Registers

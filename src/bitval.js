@@ -88,6 +88,10 @@ class Bitval {
         throw new Error('Unsupported bitval ' + val);
     }
 
+    not() {
+        return this.xor(new Bitval(BITVAL_KNOWN1));
+    }
+
     and(rhs) {
         if (this.val === BITVAL_KNOWN0 || rhs.val === BITVAL_KNOWN0) {
             return new Bitval(0);
