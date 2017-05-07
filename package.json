@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "browserify -t [ babelify [ --presets env ] ] src/c2pfind.web.js  --outfile js/c2pfind.js && browserify -t [ babelify [ --presets env ] ] src/m68k.web.js  --outfile js/m68k.js",
-    "test": "node src/bitval.test.js && node src/bitvaln.test.js && node src/m68k.test.js",
+    "test": "node src/bitval.test.js && node src/bitvaln.test.js && node src/m68k.test.js && node src/m68k_instructions.test.js",
     "long-test": "npm run test && node src/c2pfind.test.js"
   }
 }
