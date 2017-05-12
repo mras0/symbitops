@@ -1698,7 +1698,7 @@ class BitvalN {
     }
 
     set(val) {
-        if (val.nbits() > this.nbits()) throw new Error('Too many bits requested: ' + nbits);
+        if (val.nbits() > this.nbits()) throw new Error('Too many bits set: ' + val.nbits());
         let res = new BitvalN(this.nbits());
         for (let i = 0; i < res.nbits(); ++i) {
             res.bit[i] = i < val.nbits() ? val.bit[i] : this.bit[i];
@@ -1891,14 +1891,28 @@ function defaultbits(l) {
 let state = {
     quiet: true,
     all_registers: new Array(),
-    writeline: console.log
+    writeline: console.log,
+    mem: new Array()
+};
+state.find_register = function (name) {
+    return this.all_registers.indexOf('' + name);
 };
 state.make_register = function (name) {
-    if (this.all_registers.indexOf(name) === -1) {
+    if (this.find_register(name) === -1) {
         state[name] = new BitvalN(32);
         this.all_registers.push(name);
     }
-    return name;
+    if (name[0] === 'D') {
+        return {
+            toString: function () {
+                return name;
+            },
+            W: name,
+            L: name + '.L'
+        };
+    } else {
+        return name;
+    }
 };
 state.log = function (msg) {
     if (this.quiet) return;
@@ -1916,10 +1930,13 @@ state.reset = function () {
     this.all_registers.forEach(function (reg) {
         if (reg[0] == 'D') {
             this[reg] = defaultbits(parseInt(reg[1], 10) * 4);
+        } else if (reg[0] == 'A') {
+            this[reg] = BitvalN.constN(32, 0);
         } else {
             this[reg] = new BitvalN(32);
         }
     }, this);
+    this.mem = new Array();
 };
 
 function get_size_postfix(size) {
@@ -1929,6 +1946,8 @@ function get_size_postfix(size) {
         return '.W';
     } else if (size == 8) {
         return '.B';
+    } else if (typeof size === 'undefined') {
+        return '';
     } else {
         throw new Error('Invalid operation size ' + size);
     }
@@ -1943,15 +1962,140 @@ state.log_instruction = function (name, sizestr, operands, result) {
     this.log('\t' + name + sizestr + '\t' + rightpad(operands, MAX_INSTRUCTION_LENGTH) + result);
 };
 
+state.access_mem = function (size, addr, val) {
+    let a = addr.real_value();
+    let as = typeof a === 'undefined' ? addr.toString() : '$' + a.toString(16);
+
+    if (size > 8 && addr.get(1).real_value() == 1) {
+        throw new Error((typeof val === 'undefined' ? 'Read' : 'Write') + ' of size ' + size + ' to known odd address ' + as);
+    }
+
+    if (typeof val === 'undefined') {
+        if (typeof a !== 'undefined') {
+            let s = this;
+            let warned = false;
+            function readmem(a) {
+                if (typeof s.mem[a] === 'undefined') {
+                    if (!warned) {
+                        s.log('Read of size ' + size + ' from unintialized memory at ' + a);
+                        warned = true;
+                    }
+                    return new BitvalN(8);
+                } else {
+                    return s.mem[a];
+                }
+            };
+            if (size === 32) {
+                return const32(0).set(readmem(a)).lsl(8).set(readmem(a + 1)).lsl(8).set(readmem(a + 2)).lsl(8).set(readmem(a + 3));
+            } else if (size == 16) {
+                return const16(0).set(readmem(a)).lsl(8).set(readmem(a + 1));
+            } else {
+                return readmem(a);
+            }
+        }
+        this.log('Read of size ' + size + ' from ' + as + ' returning undefined');
+        return new BitvalN(size);
+    } else if (val instanceof BitvalN) {
+        if (typeof a !== 'undefined') {
+            if (size === 32) {
+                this.mem[a] = val.lsr(24).get(8);
+                this.mem[a + 1] = val.lsr(16).get(8);
+                this.mem[a + 2] = val.lsr(8).get(8);
+                this.mem[a + 3] = val.get(8);
+                return;
+            } else if (size === 16) {
+                this.mem[a] = val.lsr(8).get(8);
+                this.mem[a + 1] = val.get(8);
+            } else {
+                this.mem[a] = val;
+            }
+            return;
+        }
+        this.log('Ignoring write of size ' + size + ' to ' + as + ' (value: ' + val + ')');
+    } else {
+        throw new Error('Invalid argument to mem: ' + val);
+    }
+};
+
+state.calc_ea = function (name, size) {
+    if (name[0][0] !== 'A') throw new Error('Invalid address: [' + name.join() + ']');
+    let addr = this[name[0]];
+    if (name.length >= 2) {
+        if (name[1][0] === '+') {
+            if (typeof size !== 'number') throw new Error('Invalid size in calc_ea([' + name.join() + ']: ' + size);
+            this[name[0]] = this[name[0]].add(const32(size / 8));
+        } else if (name[1][0] === '-') {
+            if (typeof size !== 'number') throw new Error('Invalid size in calc_ea([' + name.join() + ']: ' + size);
+            this[name[0]] = this[name[0]].sub(const32(size / 8));
+            addr = this[name[0]];
+        } else if (typeof name[1] === 'number') {
+            addr = addr.add(BitvalN.constN(32, name[1]));
+        } else {
+            let o = name[1] + '';
+            if (o.slice(-2) === '.L') {
+                addr = addr.add(this[o.slice(0, 2)]);
+            } else {
+                addr = addr.add(this[o].get(16).sign_extend(32));
+            }
+            if (typeof name[2] === 'number') {
+                addr = addr.add(BitvalN.constN(32, name[2]));
+            }
+        }
+    }
+    return addr;
+};
+
+state.do_ea = function (size, name) {
+    let s = this;
+    if (name.constructor === Array && name.length >= 1 && name.length <= 3) {
+        let addr = this.calc_ea(name, size);
+        return function (val) {
+            return s.access_mem(size, addr, val);
+        };
+    }
+
+    if (typeof name !== 'string' && typeof name.W !== 'string') {
+        throw new Error('Not implemented: get_ea(' + JSON.stringify(name) + ')');
+    }
+    return function (val) {
+        if (typeof val === 'undefined') {
+            return s[name].get(size);
+        } else if (val instanceof BitvalN) {
+            if (size != val.nbits()) throw new Error('Internal error: ' + size + ' != ' + val.nbits());
+            s[name] = s[name].set(val);
+        } else {
+            throw new Error('Invalid argument to ea(' + name + '): ' + val);
+        }
+    };
+};
+
+function format_ea(ea) {
+    if (ea.constructor !== Array) return ea;
+    if (ea.length === 1) return '(' + ea[0] + ')';
+    if (ea[1] === '+') return '(' + ea[0] + ')+';
+    if (ea[1] === '-') return '-(' + ea[0] + ')';
+    return '(' + ea[0] + ',' + ea[1] + ')';
+};
+
+function format_res(dst, res) {
+    return typeof dst === 'string' ? state[dst] : res;
+};
+
 state.do_unary_op = function (name, size, dst, f) {
     let sizestr = '';
     if (typeof size === 'undefined') {
-        state[dst] = f(state[dst]);
+        size = 32;
     } else {
         sizestr = get_size_postfix(size);
-        state[dst] = state[dst].set(f(state[dst].get(size)));
     }
-    this.log_instruction(name, sizestr, dst, dst + ' = ' + state[dst]);
+    let dst_ea = this.do_ea(size, dst);
+    let dst_str = format_ea(dst);
+    let res = f(dst_ea);
+    if (!(res instanceof BitvalN)) {
+        throw new Error('Internal error: ' + name + sizestr + ' ' + dst_str + ' returned undefined!');
+    }
+    dst_ea(res);
+    this.log_instruction(name, sizestr, dst_str, dst_str + ' = ' + format_res(dst, res));
 };
 
 state.do_binary_op = function (name, size, src, dst, f) {
@@ -1966,16 +2110,21 @@ state.do_binary_op = function (name, size, src, dst, f) {
     if (typeof src === 'number') {
         srctext = '#$' + src.toString(16);
         src = BitvalN.constN(size, src);
-    } else if (state.all_registers.indexOf(src) !== -1) {
-        srctext = src;
-        src = state[src].get(size);
+    } else if (this.find_register(src) !== -1 || src.constructor === Array) {
+        srctext = format_ea(src);
+        src = this.do_ea(size, src)();
     } else {
         srctext = '#magic';
         src = BitvalN.constN(size, 0).set(BitvalN.named(src));
     }
-
-    state[dst] = state[dst].set(f(src, state[dst].get(size)));
-    this.log_instruction(name, sizestr, srctext + ', ' + dst, dst + ' = ' + state[dst]);
+    let dst_ea = this.do_ea(size, dst);
+    let dst_str = format_ea(dst);
+    let res = f(src, dst_ea);
+    if (!(res instanceof BitvalN)) {
+        throw new Error('Internal error: ' + name + sizestr + ' ' + srctext + ', ' + dst_str + ' returned undefined!');
+    }
+    dst_ea(res);
+    this.log_instruction(name, sizestr, srctext + ', ' + dst_str, dst_str + ' = ' + format_res(dst, res));
 };
 
 function make_normal_unary_op(name, f) {
@@ -2021,7 +2170,7 @@ function check_small_arg(name, val) {
     if (typeof val === 'number') {
         // immediate
         check_immediate(name, val, 1, 8);
-    } else if (state.all_registers.indexOf(val) !== -1) {
+    } else if (state.find_register(val) !== -1) {
         // register OK
     } else {
         throw new Error('Invalid argument to ' + name + ': ' + val);
@@ -2051,55 +2200,55 @@ make_normal_binary_op('MOVE', function (src, dst) {
     return src;
 });
 make_normal_binary_op('OR', function (src, dst) {
-    return dst.or(src);
+    return dst().or(src);
 });
 make_normal_binary_op('AND', function (src, dst) {
-    return dst.and(src);
+    return dst().and(src);
 });
 make_normal_binary_op('EOR', function (src, dst) {
-    return dst.xor(src);
+    return dst().xor(src);
 });
 make_normal_binary_op('ADD', function (src, dst) {
-    return dst.add(src);
+    return dst().add(src);
 });
 make_normal_binary_op('SUB', function (src, dst) {
-    return dst.sub(src);
+    return dst().sub(src);
 });
 make_normal_binary_op('ADDQ', function (src, dst) {
-    return dst.add(src);
+    return dst().add(src);
 }, check_small_arg);
 make_normal_binary_op('SUBQ', function (src, dst) {
-    return dst.sub(src);
+    return dst().sub(src);
 }, check_small_arg);
 make_normal_binary_op('LSR', function (src, dst) {
-    return dst.lsr(src.get(6));
+    return dst().lsr(src.get(6));
 }, check_small_arg);
 make_normal_binary_op('LSL', function (src, dst) {
-    return dst.lsl(src.get(6));
+    return dst().lsl(src.get(6));
 }, check_small_arg);
 make_normal_binary_op('ASR', function (src, dst) {
-    return dst.asr(src.get(6));
+    return dst().asr(src.get(6));
 }, check_small_arg);
 make_normal_binary_op('ASL', function (src, dst) {
-    return dst.asl(src.get(6));
+    return dst().asl(src.get(6));
 }, check_small_arg);
 make_normal_binary_op('ROR', function (src, dst) {
-    return dst.ror(src.get(6));
+    return dst().ror(src.get(6));
 }, check_small_arg);
 make_normal_binary_op('ROL', function (src, dst) {
-    return dst.rol(src.get(6));
+    return dst().rol(src.get(6));
 }, check_small_arg);
 make_normal_unary_op('NOT', function (dst) {
-    return dst.not();
+    return dst().not();
 });
 make_normal_unary_op('NEG', function (dst) {
-    return dst.neg();
+    return dst().neg();
 });
 make_normal_unary_op('CLR', function (dst) {
-    return BitvalN.constN(dst.nbits(), 0);
+    dst = dst();return BitvalN.constN(dst.nbits(), 0);
 });
 make_normal_unary_op('EXT', function (dst) {
-    return dst.get(dst.nbits() / 2).sign_extend(dst.nbits());
+    dst = dst();return dst.get(dst.nbits() / 2).sign_extend(dst.nbits());
 });
 delete exports.EXT.B; // EXT.B is not legal
 
@@ -2115,7 +2264,7 @@ exports.MOVEQ.L = exports.MOVEQ;
 
 exports.SWAP = function (dst) {
     return state.do_unary_op('SWAP', undefined, dst, function (dst) {
-        return dst.rotate(16);
+        return dst().rotate(16);
     });
 };
 exports.SWAP.W = exports.SWAP;
@@ -2131,6 +2280,12 @@ exports.EXG = function (src, dst) {
 };
 exports.EXG.L = exports.EXG;
 
+exports.LEA = function (src, dst) {
+    state[dst] = state.calc_ea(src);
+    state.log_instruction('LEA', '', format_ea(src) + ', ' + dst, dst + ' = ' + state[dst]);
+};
+exports.LEA.L = exports.LEA;
+
 //
 // Registers
 //
@@ -2142,6 +2297,14 @@ exports.D4 = state.make_register('D4');
 exports.D5 = state.make_register('D5');
 exports.D6 = state.make_register('D6');
 exports.D7 = state.make_register('D7');
+exports.A0 = state.make_register('A0');
+exports.A1 = state.make_register('A1');
+exports.A2 = state.make_register('A2');
+exports.A3 = state.make_register('A3');
+exports.A4 = state.make_register('A4');
+exports.A5 = state.make_register('A5');
+exports.A6 = state.make_register('A6');
+exports.A7 = state.make_register('A7');
 state.reset();
 
 },{"./bitvaln":7}],9:[function(require,module,exports){
@@ -2432,6 +2595,20 @@ function parse_reglist(reglist) {
     return regs;
 }
 
+function parse_num(v) {
+    let b = 10;
+    let s = 1;
+    if (v[0] === '-') {
+        s = -1;
+        v = v.slice(1);
+    }
+    if (v[0] === '$') {
+        b = 16;
+        v = v.slice(1);
+    }
+    return s * parseInt(v, b);
+}
+
 BASE_COST = 4;
 
 class Operand {
@@ -2476,18 +2653,7 @@ class Operand {
             throw new Error('Operand.immediate_value not implemented for ' + op_type_str(this.type) + ' size ' + size);
         }
         assert.equal(this.val[0], '#');
-        let v = this.val.slice(1);
-        let b = 10;
-        let s = 1;
-        if (v[0] === '-') {
-            s = -1;
-            v = v.slice(1);
-        }
-        if (v[0] === '$') {
-            b = 16;
-            v = v.slice(1);
-        }
-        return s * parseInt(v, b);
+        return parse_num(this.val.slice(1));
     }
 
     static parse(line, types) {
@@ -2956,8 +3122,31 @@ function operand_to_code(op) {
     switch (op.type) {
         case OP_DREG:
             return op.val.toUpperCase();
+        case OP_AREG:
+            return op.val.toUpperCase();
+        case OP_INDIRECT:
+            return '[A' + op.val[2] + ']';
+        case OP_POSTINCR:
+            return '[A' + op.val[2] + ', \'+\']';
+        case OP_PREINCR:
+            return '[A' + op.val[3] + ', \'-\']';
+        case OP_DISP16:
+            {
+                let m = new RegExp('^(' + re_numconst_str + ')\\s*\\(\\s*[aA]([0-7])\\s*\\)$').exec(op.val);
+                if (!m) break;
+                return '[A' + m[2] + ',' + parse_num(m[1]) + ']';
+            }
+        case OP_INDEX:
+            {
+                let m = new RegExp('^(' + re_numconst_str + ')?\\s*\\(\\s*[aA]([0-7])\\s*,\\s*([dD][0-7](?:.[wWlL])?)\\s*\\)$').exec(op.val);
+                if (!m) break;
+                let r = '[A' + m[2] + ',' + m[3].toUpperCase();
+                if (m[1]) r += ', ' + parse_num(m[1]);
+                return r + ']';
+            }
         case OP_IMMEDIATE:
             return op.immediate_value().toString(10);
+        //case OP_REGLIST:    return ;
     }
     throw new Error('operand_to_code: Not implemented for "' + op + '"');
 };
@@ -2970,7 +3159,7 @@ function to_code(lines) {
             try {
                 code += i.name + '.' + i.size + '(' + i.operands.map(operand_to_code).join(', ') + ')\n';
             } catch (e) {
-                code += 'state.writeline(\'Codegen not implemented for "' + i + '"\')\n';
+                code += 'state.writeline(\'Codegen not implemented for "' + i + '" - "' + e + '"\')\n';
             }
         }
     });

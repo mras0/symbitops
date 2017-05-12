@@ -383,13 +383,29 @@ code1.forEach(function (text) {
     }
 });
 
-let ls = parse_lines('\tMOVE.L #42,D0\n\tSub.w #66,d0\n\tMOVE.L A0,A1');
-assert.deepEqual(ls[0].instruction, new Instruction('MOVE', 'L', [new Operand(OP_IMMEDIATE, '#42'), new Operand(OP_DREG, 'D0')]));
+let ls = parse_lines('\tMOVE.b #42,D0\n\tSub.w #66,d0\n\tMOVE.L A0,A1\n\tMOVE.W d0,(a0)\n\tMOVEQ #-8,d0');
+assert.equal(ls.length, 5);
+assert.deepEqual(ls[0].instruction, new Instruction('MOVE', 'B', [new Operand(OP_IMMEDIATE, '#42'), new Operand(OP_DREG, 'D0')]));
 assert.deepEqual(ls[1].instruction, new Instruction('SUB', 'W', [new Operand(OP_IMMEDIATE, '#66'), new Operand(OP_DREG, 'd0')]));
 assert.deepEqual(ls[2].instruction, new Instruction('MOVE', 'L', [new Operand(OP_AREG, 'A0'), new Operand(OP_AREG, 'A1')]));
+assert.deepEqual(ls[3].instruction, new Instruction('MOVE', 'W', [new Operand(OP_DREG, 'd0'), new Operand(OP_INDIRECT, '(a0)')]));
+assert.deepEqual(ls[4].instruction, new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, '#-8'), new Operand(OP_DREG, 'd0')]));
 let f = to_code(ls);
 D0 = 'D0';
-MOVE = { L : function (src, dst) { assert.equal(src, 42); assert.equal(dst, D0); } };
-SUB = { W : function (src, dst) { assert.equal(src, 66); assert.equal(dst, D0); } };
+A0 = 'A0';
+A1 = 'A1';
+called = 0;
+MOVE = {
+    B : function (src, dst) { ++called; assert.equal(src, 42); assert.equal(dst, D0); },
+    W : function (src, dst) { ++called; assert.equal(src, D0); assert.deepEqual(dst, [A0]); },
+    L : function (src, dst) { ++called; assert.equal(src, A0); assert.equal(dst, A1); },
+};
+MOVEQ = {
+    L : function (src, dst) { ++called; assert.equal(src, -8); assert.equal(dst, D0); },
+};
+SUB = { W : function (src, dst) { ++called; assert.equal(src, 66); assert.equal(dst, D0); } };
 state = { writeline : function (msg) {} };
 f();
+assert.equal(5, called);
+
+//console.log(to_code(parse_lines('\tMOVE.L D0, 22 ( A0 )\n\tMOVE.B D1,12( A0, D0.w)\n\tMOVE.L D0,(a0,d0)')).toString());

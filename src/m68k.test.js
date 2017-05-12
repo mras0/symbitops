@@ -1,5 +1,6 @@
 const assert = require('assert');
-require('./m68k_global')
+require('./m68k_global');
+const { BitvalN } = require('./bitvaln');
 
 // MOVE
 state.reset();
@@ -207,3 +208,114 @@ assert.deepEqual(state[D0], const32('a3b3c3d3e3f3g3h3 i3j3k3l3m3n3o3p3 q3r3s3t3u
 assert.deepEqual(state[D1], const32('a1b1c1d1e1f1g1h1 i1j1k1l1m1n1o1p1 q1r1s1t1u1v1w1x1 y1z1A1B1C1D1E1F1'));
 assert.deepEqual(state[D2], const32('a2b2c2d2e2f2g2h2 i2j2k2l2m2n2o2p2 q2r2s2t2u2v2w2x2 y2z2A2B2C2D2E2F2'));
 assert.deepEqual(state[D3], const32('a0b0c0d0e0f0g0h0 i0j0k0l0m0n0o0p0 q0r0s0t0u0v0w0x0 y0z0A0B0C0D0E0F0'));
+
+//
+// Addressing
+//
+state.log('');
+state.reset();
+let old_access_mem = state.access_mem;
+memmock = function(expected) {
+    pr = function(v) {
+        let x = v ? v.real_value() : undefined;
+        return typeof(x) === 'undefined' ? ''+v : '$'+x.toString(16);
+    };
+    return function(size, addr, val) {
+        let e = expected.shift();
+        assert.deepEqual(e[0], size, 'size:' + e[0] + ' != ' + size);
+        assert.deepEqual(e[1], addr, 'addr:' + pr(e[1]) + ' != ' + pr(addr));
+        assert.deepEqual(e[2], val,  'val:' + pr(e[2]) + ' != ' + pr(val));
+        if (typeof val === 'undefined') {
+            return BitvalN.constN(size, addr.get(size));
+        }
+    };
+};
+
+MOVE.L(10,A0);
+MOVE.L(A0,D0);
+assert.equal(10, state[D0].real_value());
+
+state.access_mem = memmock([[32, const32(10), undefined]]);
+MOVE.L([A0],D1);
+assert.deepEqual(state[D1], const32(10));
+
+MOVE.L('???????????????? ???????????????? !!!!!!!!!!!!!!!! !!!!!!!!!!!!....', D0);
+state.access_mem = memmock([[16, const32(6), undefined]]);
+MOVE.W([A0,D0.W],D1);
+state.access_mem = memmock([[16, const32(6), undefined]]);
+MOVE.W([A0,D0],D1);
+
+
+state.access_mem = memmock([[8, const32(0), const8(42)]]);
+MOVE.B(42,[A1]);
+
+state.access_mem = memmock([[8, const32(10), undefined], [8, const32(10), const8(256-3)]]);
+SUB.B(13,[A0]);
+
+MOVE.L(80000, A0)
+MOVE.L(-70000, D0)
+state.access_mem = memmock([[8, const32(10000), const8(60)]]);
+MOVE.B(60,[A0,D0.L]);
+state.access_mem = memmock([[8, const32(10000), const8(60)]]);
+MOVE.B(60,[A0,D0.L]);
+state.access_mem = memmock([[8, const32(80012), const8(60)]]);
+MOVE.B(60,[A0,12]);
+state.access_mem = memmock([[8, const32(9999), const8(60)]]);
+MOVE.B(60,[A0,D0.L,-1]);
+
+MOVE.L(100, A0);
+MOVE.L(123, D0);
+state.access_mem = memmock([[32, const32(223), undefined], [32, const32(100), undefined], [32, const32(100), const32(323)]]);
+ADD.L([A0,D0.L], [A0]);
+
+MOVE.L(1000, A0);
+MOVE.L(2000, A1);
+state.access_mem = memmock([
+    [32, const32(2000), undefined],
+    [32, const32(1000), undefined],
+    [32, const32(1000), const32(3000)],
+    ]);
+ADD.L([A1], [A0]);
+
+MOVE.L(20, A0);
+state.access_mem = memmock([[32, const32(20), undefined]]);
+MOVE.L([A0,'+'], D0);
+assert.deepEqual(state[A0], const32(24));
+
+MOVE.L(30, A7);
+state.access_mem = memmock([[32, const32(26), const32(42)]]);
+MOVE.L(42, [A7,'-']);
+assert.deepEqual(state[A7], const32(26));
+
+//
+// Default memory handling
+//
+
+state.access_mem = old_access_mem;
+state.reset();
+MOVE.L(0x12345678, [A0,'+']);
+MOVE.W(0x9ABC, [A0,'+']);
+MOVE.B(0xDE, [A0,'+']);
+assert.deepEqual(const8(0x12), state.mem[0]);
+assert.deepEqual(const8(0x34), state.mem[1]);
+assert.deepEqual(const8(0x56), state.mem[2]);
+assert.deepEqual(const8(0x78), state.mem[3]);
+assert.deepEqual(const8(0x9A), state.mem[4]);
+assert.deepEqual(const8(0xBC), state.mem[5]);
+assert.deepEqual(const8(0xDE), state.mem[6]);
+assert.deepEqual(const32(7), state[A0]);
+
+MOVE.L(7, A1);
+MOVE.B([A1,'-'], D0);
+MOVE.W([A1,'-'], D1);
+MOVE.L([A1,'-'], D2);
+//console.log([[D0,8],[D1,16],[D2,32]].map(function (e) { return e[0] + ' = $' + state[e[0]].get(e[1]).real_value().toString(16); }).join('\n'));
+assert.deepEqual(const32(0), state[A1]);
+assert.deepEqual(const8(0xDE), state[D0].get(8));
+assert.deepEqual(const16(0x9ABC), state[D1].get(16));
+assert.deepEqual(const32(0x12345678), state[D2]);
+
+MOVE.L(42, A0)
+MOVE.L(10, D0)
+LEA([A0,D0], A1);
+assert.deepEqual(52, state[A1].real_value());

@@ -48,6 +48,8 @@ window.onload = function() {
     };
     document.getElementById('clear').onclick = function() {
         codeElem.value = '';
+        codeElem.selectionStart = codeElem.selectionEnd = 0;
+        codeElem.focus();
     };
     document.getElementById('asm').onclick = function() {
         codeElem.value = 'is = parse_lines(`\n\t\n`);\nprint_cost(is),state.log(\'\'),to_code(is)(),state.print([D0])';

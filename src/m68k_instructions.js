@@ -147,6 +147,20 @@ function parse_reglist(reglist) {
     return regs;
 }
 
+function parse_num(v) {
+    let b = 10;
+    let s = 1;
+    if (v[0] === '-') {
+        s = -1;
+        v = v.slice(1);
+    }
+    if (v[0] === '$') {
+        b = 16;
+        v = v.slice(1);
+    }
+    return s * parseInt(v, b);
+}
+
 BASE_COST=4
 
 class Operand {
@@ -183,18 +197,7 @@ class Operand {
             throw new Error('Operand.immediate_value not implemented for ' + op_type_str(this.type) + ' size ' + size);
         }
         assert.equal(this.val[0], '#');
-        let v = this.val.slice(1);
-        let b = 10;
-        let s = 1;
-        if (v[0] === '-') {
-            s = -1;
-            v = v.slice(1);
-        }
-        if (v[0] === '$') {
-            b = 16;
-            v = v.slice(1);
-        }
-        return s * parseInt(v, b);
+        return parse_num(this.val.slice(1));
     }
 
     static parse(line, types) {
@@ -640,7 +643,24 @@ function parse_lines(text) {
 function operand_to_code(op) {
     switch (op.type) {
         case OP_DREG:       return op.val.toUpperCase();
+        case OP_AREG:       return op.val.toUpperCase();
+        case OP_INDIRECT:   return '[A' + op.val[2] + ']';
+        case OP_POSTINCR:   return '[A' + op.val[2] + ', \'+\']';
+        case OP_PREINCR:    return '[A' + op.val[3] + ', \'-\']';
+        case OP_DISP16: {
+            let m = new RegExp('^(' + re_numconst_str + ')\\s*\\(\\s*[aA]([0-7])\\s*\\)$').exec(op.val);
+            if (!m) break;
+            return '[A'+m[2]+','+parse_num(m[1])+']';
+        }
+        case OP_INDEX: {
+            let m = new RegExp('^(' + re_numconst_str + ')?\\s*\\(\\s*[aA]([0-7])\\s*,\\s*([dD][0-7](?:.[wWlL])?)\\s*\\)$').exec(op.val);
+            if (!m) break;
+            let r = '[A'+m[2]+','+m[3].toUpperCase();
+            if (m[1]) r += ', ' + parse_num(m[1]);
+            return r + ']';
+        }
         case OP_IMMEDIATE:  return op.immediate_value().toString(10);
+        //case OP_REGLIST:    return ;
     }
     throw new Error('operand_to_code: Not implemented for "' + op + '"');
 };
@@ -653,7 +673,7 @@ function to_code(lines) {
             try {
                 code += i.name + '.' + i.size + '(' + i.operands.map(operand_to_code).join(', ') + ')\n';
             } catch(e) {
-                code += 'state.writeline(\'Codegen not implemented for "' + i + '"\')\n';
+                code += 'state.writeline(\'Codegen not implemented for "' + i + '" - "' + e + '"\')\n';
             }
         }
     });

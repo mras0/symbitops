@@ -87,7 +87,7 @@ class BitvalN {
     }
 
     set(val) {
-        if (val.nbits() > this.nbits()) throw new Error('Too many bits requested: ' + nbits);
+        if (val.nbits() > this.nbits()) throw new Error('Too many bits set: ' + val.nbits());
         let res = new BitvalN(this.nbits());
         for (let i = 0; i < res.nbits(); ++i) {
             res.bit[i] = i < val.nbits() ? val.bit[i] : this.bit[i];
