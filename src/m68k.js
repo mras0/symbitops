@@ -10,6 +10,19 @@ function rightpad(str, len) {
     return (str + new Array(len).join(' ')).substring(0, len);
 };
 
+function nth_name(l) {
+    if (l >= 26) return String.fromCharCode(65 + (l-26));
+    return String.fromCharCode(97 + l);
+};
+
+function defaultbits(l) {
+    let n = '';
+    for (i = 31; i >= 0; --i) {
+        n += nth_name(l+3-Math.floor(i/8))+(i%8).toString(10);
+    }
+    return BitvalN.named(n);
+};
+
 //
 // State
 //
@@ -40,7 +53,11 @@ state.print = function(regs) {
 };
 state.reset = function() {
     this.all_registers.forEach(function(reg) {
-        this[reg] = new BitvalN(32);
+        if (reg[0] == 'D') {
+            this[reg] = defaultbits(parseInt(reg[1],10)*4);
+        } else {
+            this[reg] = new BitvalN(32);
+        }
     }, this);
 };
 
@@ -210,3 +227,4 @@ exports.D4 = state.make_register('D4');
 exports.D5 = state.make_register('D5');
 exports.D6 = state.make_register('D6');
 exports.D7 = state.make_register('D7');
+state.reset();

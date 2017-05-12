@@ -49,6 +49,11 @@ window.onload = function() {
     document.getElementById('clear').onclick = function() {
         codeElem.value = '';
     };
+    document.getElementById('asm').onclick = function() {
+        codeElem.value = 'is = parse_lines(`\n\t\n`);\nprint_cost(is),state.log(\'\'),to_code(is)(),state.print([D0])';
+        codeElem.selectionStart = codeElem.selectionEnd = codeElem.value.indexOf('`')+3;
+        codeElem.focus();
+    };
     codeElem.focus();
 };
         </script>
@@ -75,13 +80,10 @@ state.print([D0,D1])
 assert.equal(''+state[D1].get(8), '........G3G2G1G0')
 
 // built-in C2P helpers:
-MOVE.L('a7a6a5a4a3a2a1a0 b7b6b5b4b3b2b1b0 c7c6c5c4c3c2c1c0 d7d6d5d4d3d2d1d0', D0)
-MOVE.L('e7e6e5e4e3e2e1e0 f7f6f5f4f3f2f1f0 g7g6g5g4g3g2g1g0 h7h6h5h4h3h2h1h0', D1)
-MOVE.L('i7i6i5i4i3i2i1i0 j7j6j5j4j3j2j1j0 k7k6k5k4k3k2k1k0 l7l6l5l4l3l2l1l0', D2)
-MOVE.L('m7m6m5m4m3m2m1m0 n7n6n5n4n3n2n1n0 o7o6o5o4o3o2o1o0 p7p6p5p4p3p2p1p0', D3)
-c2p_step4(8, 2); // Perform 8x2 C2P step on d0-d3. Use c2p_step8 to work on d0-d7 (uses T0 temp register)
+state.reset()
+c2p_step4(8, 2) // Perform 8x2 C2P step on d0-d3. Use c2p_step8 to work on d0-d7 (uses T0 temp register)
 state.log('\nOne small step for mankind!\n')
-swap_and_merge(D0, D1, 4); // First step of 4x1
+swap_and_merge(D0, D1, 4) // First step of 4x1
 
 // Advanced use: TX = state.make_register('TX')
 // to make another temp register
@@ -90,15 +92,16 @@ swap_and_merge(D0, D1, 4); // First step of 4x1
 is = parse_lines(`
   MOVE.L #100, d0
   SUB.L #42, D0
-`);
+`)
 
 print_cost(is)
-to_code(is)();
-state.print([D0]);</textarea>
+to_code(is)()
+state.print([D0])</textarea>
         </div>
         <div style="display: table; margin-top: 20px">
             <button id="run" type="button">Run!</button> &nbsp;
-            <button id="clear" type="button">Clear!</button>
+            <button id="clear" type="button">Clear</button> &nbsp;
+            <button id="asm" type="button">Asm mode</button>
         </div>
     </body>
 </html>

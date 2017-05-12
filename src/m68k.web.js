@@ -24,7 +24,7 @@ window.onload = function() {
     preElem.appendChild(text);
     document.body.appendChild(preElem);
     state.writeline = function(msg) {
-        text.textContent += msg;
+        text.textContent += msg || '';
         text.textContent += '\n';
     };
     document.getElementById('run').onclick = function() {

@@ -3,8 +3,10 @@ require('./m68k_global')
 
 // MOVE
 state.reset();
+assert.equal(''+state[D0], 'a7a6a5a4a3a2a1a0 b7b6b5b4b3b2b1b0 c7c6c5c4c3c2c1c0 d7d6d5d4d3d2d1d0');
+assert.equal(''+state[D7], 'C7C6C5C4C3C2C1C0 D7D6D5D4D3D2D1D0 E7E6E5E4E3E2E1E0 F7F6F5F4F3F2F1F0');
 MOVE(42, D0);
-assert.equal(''+state[D0], '???????????????? ???????????????? ................ ....!!..!!..!!..');
+assert.equal(''+state[D0], 'a7a6a5a4a3a2a1a0 b7b6b5b4b3b2b1b0 ................ ....!!..!!..!!..');
 
 // NOT
 state.reset();
@@ -109,16 +111,16 @@ assert.equal(state[D1].real_value(), 42);
 // EXT
 state.reset();
 MOVE.B(17, D0);
-assert.equal(state[D0]+'', '???????????????? ???????????????? ???????????????? ......!!......!!');
+assert.equal(state[D0]+'', 'a7a6a5a4a3a2a1a0 b7b6b5b4b3b2b1b0 c7c6c5c4c3c2c1c0 ......!!......!!');
 EXT(D0);
-assert.equal(state[D0]+'', '???????????????? ???????????????? ................ ......!!......!!');
+assert.equal(state[D0]+'', 'a7a6a5a4a3a2a1a0 b7b6b5b4b3b2b1b0 ................ ......!!......!!');
 EXT.L(D0);
 assert.equal(state[D0]+'', '................ ................ ................ ......!!......!!');
 
 MOVE.B(-2, D1);
-assert.equal(state[D1]+'', '???????????????? ???????????????? ???????????????? !!!!!!!!!!!!!!..');
+assert.equal(state[D1]+'', 'e7e6e5e4e3e2e1e0 f7f6f5f4f3f2f1f0 g7g6g5g4g3g2g1g0 !!!!!!!!!!!!!!..');
 EXT(D1);
-assert.equal(state[D1]+'', '???????????????? ???????????????? !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!..');
+assert.equal(state[D1]+'', 'e7e6e5e4e3e2e1e0 f7f6f5f4f3f2f1f0 !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!..');
 EXT.L(D1);
 assert.equal(state[D1]+'', '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!..');
 
@@ -127,14 +129,6 @@ assert.equal(state[D1]+'', '!!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !!!!!!!!!!!!!!!! !
 //
 
 state.reset();
-state[D0] = const32("a7a6a5a4a3a2a1a0 b7b6b5b4b3b2b1b0 c7c6c5c4c3c2c1c0 d7d6d5d4d3d2d1d0");
-state[D1] = const32("e7e6e5e4e3e2e1e0 f7f6f5f4f3f2f1f0 g7g6g5g4g3g2g1g0 h7h6h5h4h3h2h1h0");
-state[D2] = const32("i7i6i5i4i3i2i1i0 j7j6j5j4j3j2j1j0 k7k6k5k4k3k2k1k0 l7l6l5l4l3l2l1l0");
-state[D3] = const32("m7m6m5m4m3m2m1m0 n7n6n5n4n3n2n1n0 o7o6o5o4o3o2o1o0 p7p6p5p4p3p2p1p0");
-state[D4] = const32("q7q6q5q4q3q2q1q0 r7r6r5r4r3r2r1r0 s7s6s5s4s3s2s1s0 t7t6t5t4t3t2t1t0");
-state[D5] = const32("u7u6u5u4u3u2u1u0 v7v6v5v4v3v2v1v0 w7w6w5w4w3w2w1w0 x7x6x5x4x3x2x1x0");
-state[D6] = const32("y7y6y5y4y3y2y1y0 z7z6z5z4z3z2z1z0 A7A6A5A4A3A2A1A0 B7B6B5B4B3B2B1B0");
-state[D7] = const32("C7C6C5C4C3C2C1C0 D7D6D5D4D3D2D1D0 E7E6E5E4E3E2E1E0 F7F6F5F4F3F2F1F0");
 state.print();
 c2p_step8(8, 2);
 c2p_step8(4, 1);

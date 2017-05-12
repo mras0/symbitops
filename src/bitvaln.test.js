@@ -1,6 +1,7 @@
 var assert = require('assert');
 
-const { BitvalN } = require('./bitvaln')
+const { Bitval  } = require('./bitval');
+const { BitvalN } = require('./bitvaln');
 
 //
 // Test BitvalN
@@ -22,6 +23,19 @@ assert.deepEqual(BitvalN.named('R2R1R0..'), bvn32_r4.add(bvn32_r4));
 assert(BitvalN.constN(4, 3).equals(BitvalN.named('....!!!!')));
 assert.deepEqual(BitvalN.constN(4, 15), BitvalN.constN(4, 3).add(BitvalN.constN(4, 12)));
 assert.equal('!!!!!!....!!', ''+BitvalN.constN(4, 9).sign_extend(6));
+
+function bv(val) { return new Bitval(val); };
+let sum3 = BitvalN.constN(3, '..A1A0').add(BitvalN.constN(3, '..B1B0'));
+assert.deepEqual(bv(), sum3.bit[2]);
+assert.deepEqual(bv('A1').xor(bv('B1')).xor(bv('A0').and(bv('B0'))), sum3.bit[1]);
+assert.deepEqual(bv('A0').xor(bv('B0')), sum3.bit[0]);
+
+let sum8 = BitvalN.named('A7A6A5A4A3A2A1A0').add(BitvalN.named('B7B6B5B4B3B2B1B0'));
+assert.deepEqual(BitvalN.named('????????????'), sum8.lsr(2).get(6));
+assert.deepEqual(bv('A1').xor(bv('B1')).xor(bv('A0').and(bv('B0'))), sum8.bit[1]);
+assert.deepEqual(bv('A0').xor(bv('B0')), sum8.bit[0]);
+
+assert.equal('?? ????????????~(A0^A1)~A0', ''+BitvalN.named('..A7A6A5A4A3A2A1A0').add(BitvalN.constN(9,-1)));
 
 let bvn8_123 = BitvalN.constN(8, 123);
 
