@@ -2,7 +2,7 @@ const assert = require('assert');
 
 const re_comment_str      = '^\\s*([*;].*)$';
 const re_symbol_str       = '[A-Za-z.][0-9A-Za-z.$_]*';
-const re_label_str        = '^(' + re_symbol_str + '(?::)?)\\s*|\\s*(' + re_symbol_str + ':)\\s*';
+const re_label_str        = '^(' + re_symbol_str + '(?::)?)\\s*|^\\s*(' + re_symbol_str + ':)\\s*';
 const re_size_postfix     = '(?:\\.[bBwWlLsS])?';
 const re_operation_str    = '^\\s*([A-Za-z][0-9A-Za-z]*'+re_size_postfix+')';
 const re_numconst_str     = '(?:-)?(?:[0-9]+|\\$[0-9A-Fa-f]+)' // TODO: binary, octal and ascii, expression
@@ -25,7 +25,7 @@ const re_operation        = new RegExp(re_operation_str);
 const re_operand_sep      = new RegExp(re_operand_sep_str);
 const re_dreg             = new RegExp('(^'+re_dreg_str+')');
 const re_areg             = new RegExp('(^'+re_areg_str+')');
-const re_indirect         = new RegExp('(^'+re_indirect_str+')(?:[^+])'); // Make sure we don't match (aN)+
+const re_indirect         = new RegExp('(^'+re_indirect_str+')(?![+])'); // Make sure we don't match (aN)+
 const re_postincr         = new RegExp('(^'+re_postincr_str+')');
 const re_preincr          = new RegExp('(^'+re_preincr_str+')');
 const re_disp16           = new RegExp('(^'+re_disp16_str+')');
@@ -168,10 +168,11 @@ class Operand {
         case OP_AREG:       return 0;
         case OP_INDIRECT:
         case OP_POSTINCR:   return size === 'L' ? 8 : 4;
-        //case OP_PREINCR:    return ;
+        case OP_PREINCR:    return size === 'L' ? 10 : 6;
         case OP_DISP16:     return size === 'L' ? 12 : 8;
         case OP_INDEX:      return size === 'L' ? 14 : 10;
-        //case OP_ABSL:       return ;
+        case OP_ABSW:       return size === 'L' ? 12 : 8;
+        case OP_ABSL:       return size === 'L' ? 16 : 12;
         case OP_IMMEDIATE:  return size === 'L' ? 2*BASE_COST : BASE_COST;
         }
         throw new Error('Operand.cost not implemented for ' + op_type_str(this.type) + ' size ' + size);
@@ -198,7 +199,7 @@ class Operand {
 
     static parse(line, types) {
         let orig_types = types;
-        types &= ~(OP_ABSL|OP_ABSW|OP_DISP16PC|OP_INDEXPC); // TODO: handle these unsupported operand types...
+        types &= ~(OP_ABSL|OP_ABSW|OP_DISP16PC|OP_INDEXPC); // TODO: Handle PC relative EA modes
         while (types != 0) {
             let type    = types & -types;
             let [l, op] = try_parse(line, op_type_re(type));
@@ -207,9 +208,11 @@ class Operand {
             }
             types &= ~type;
         }
+        // Handle absolute addresses last to avoid mathcing e.g. 'd0' as an address
         if (orig_types & (OP_ABSL|OP_ABSW)) {
             let [l, op] = try_parse(line, new RegExp('^(' + re_numconst_str + '|' + re_symbol_str + ')'));
             if (op) {
+                // TODO: OP_ABSW
                 return [l, new Operand(OP_ABSL, op)];
             }
         }
@@ -218,11 +221,9 @@ class Operand {
 };
 
 function arit_cost(size, ops) {
-    assert.equal(ops.length, 2);
-    assert(ops[1].type === OP_DREG || ops[1].type === OP_AREG);
     let cost = ops[0].cost(size) + ops[1].cost(size);
     if (size === 'L') {
-        if (ops[0].type & (OP_DREG|OP_AREG|OP_IMMEDIATE)) {
+        if ((ops[1].type === OP_DREG || ops[1].type === OP_AREG) && (ops[0].type & (OP_DREG|OP_AREG|OP_IMMEDIATE))) {
             cost += 8;
         } else {
             cost += 6;
@@ -245,7 +246,7 @@ function default_un_op() {
             if (ops[0].type === OP_DREG || ops[0].type === OP_AREG) {
                 return size === 'L' ? 6 : 4;
             } else {
-                return size === 'L' ? 12 : 8;
+                return (size === 'L' ? 12 : 8) + ops[0].cost(size);
             }
         },
     };
@@ -311,12 +312,26 @@ function default_rot_op() {
     };
 };
 
-function mul_op() {
+function default_bit_op(bcost, lcost) {
+    return {
+        allowed_sizes: ['L','B'],
+        operands: [OP_DREG|OP_IMMEDIATE, OP_EA|OP_DREG],
+        cost: function(size, ops) {
+            var dyn = ops[0].type === OP_IMMEDIATE;
+            return ops[1].cost(size) + BASE_COST*dyn + (size === 'L' ? lcost : bcost);
+        },
+        handle_size: function(ops) {
+            return (ops[1].type == OP_DREG) ? 'L' : 'B';
+        },
+    };
+};
+
+function mul_div_op(maxcost) {
     return {
         allowed_sizes: standard_sizes,
         operands: [ OP_IMMEDIATE | OP_EA | OP_DREG, OP_DREG ],
         cost: function(size, ops) {
-            return 70 + ops[0].cost(size) + ops[1].cost(size);
+            return maxcost + ops[0].cost(size) + ops[1].cost(size);
         }
     };
 };
@@ -335,10 +350,18 @@ function branch_op() {
 
 let instruction_info = {
     // Data movement instructions
+    'EXG' : {
+        allowed_sizes: ['L'],
+        operands: [ OP_DREG|OP_AREG, OP_DREG|OP_AREG],
+        cost : function(size, ops) { return 6; }
+    },
     'MOVE'  : {
         allowed_sizes: standard_sizes,
         operands: [ OP_IMMEDIATE | OP_EA | OP_DREG | OP_AREG, OP_DREG | OP_AREG | OP_EA ],
         cost : function(size, ops) {
+            if (ops[1].type === OP_PREINCR) { // HACK
+                return (size === 'L' ? 12 : 8) + ops[0].cost(size);
+            }
             return BASE_COST + ops[0].cost(size) + ops[1].cost(size);
         },
     },
@@ -398,8 +421,10 @@ let instruction_info = {
     'SUB'   : add_sub_op(),
     'CLR'   : default_un_op(),
     'NEG'   : default_un_op(),
-    'MULS'  : mul_op(),
-    'MULU'  : mul_op(),
+    'MULS'  : mul_div_op(70),
+    'MULU'  : mul_div_op(70),
+    'DIVS'  : mul_div_op(120),
+    'DIVU'  : mul_div_op(120),
     'ADDX'  : add_sub_x_op(),
     'SUBX'  : add_sub_x_op(),
     'ADDQ'  : add_sub_q_op(),
@@ -412,6 +437,11 @@ let instruction_info = {
             if (ops[1].type == OP_DREG && size !== 'L') return BASE_COST + cost;
             return 6 + cost;
         }
+    },
+    'EXT'   : {
+        allowed_sizes: ['W', 'L' ],
+        operands: [ OP_DREG ],
+        cost: function(size, ops) { return 4; }
     },
 
     // Logical instructions
@@ -433,6 +463,12 @@ let instruction_info = {
         cost: function(size, ops) { return BASE_COST; }
     },
 
+    // Bit manipulation instructions
+    'BCHG'  : default_bit_op(8, 8),
+    'BCLR'  : default_bit_op(8, 10),
+    'BSET'  : default_bit_op(8, 8),
+    'BTST'  : default_bit_op(4, 6),
+
     // Program control instructions
     // Bcc added below
     'BRA'   : branch_op(),
@@ -440,6 +476,11 @@ let instruction_info = {
         allowed_sizes: [],
         operands: [],
         cost: function(size, ops) { return 16; }
+    },
+    'TST'   : {
+        allowed_sizes: standard_sizes,
+        operands: default_un_op().operands,
+        cost: function(size, ops) { return BASE_COST + ops[0].cost(size); },
     },
 };
 
@@ -506,13 +547,6 @@ class Instruction {
         if (!instinfo) {
             throw new Error('Unknown instruction "' + operation + '"');
         }
-        if (typeof opsize !== 'undefined') {
-            if (instinfo.allowed_sizes.indexOf(opsize) === -1) {
-                throw new Error('Invalid operation size for "' + operation + '"');
-            }
-        } else if (instinfo.allowed_sizes.length) {
-            opsize = instinfo.allowed_sizes[0];
-        }
 
         //
         // Parse operands
@@ -523,12 +557,21 @@ class Instruction {
             [line, ignored] = must_parse(line, /^(\s+)/);
             for (let i = 0; i < instinfo.operands.length; ++i) {
                 let operand = undefined;
-                if (i) [line, ignored] = must_parse(line, re_operand_sep);
+                if (i)[line, ignored] = must_parse(line, re_operand_sep);
                 [line, operand] = Operand.parse(line, instinfo.operands[i]);
                 operands.push(operand);
             }
         }
 
+        if (typeof opsize !== 'undefined') {
+            if (instinfo.allowed_sizes.indexOf(opsize) === -1) {
+                throw new Error('Invalid operation size for "' + operation + '"');
+            }
+        } else if (instinfo.handle_size) {
+            opsize = instinfo.handle_size(operands);
+        } else if (instinfo.allowed_sizes.length) {
+            opsize = instinfo.allowed_sizes[0];
+        }
         return [line, new Instruction(op, opsize, operands)];
     }
 };
@@ -557,13 +600,10 @@ class Line {
         // Remove trailing whitespace
         line = line.replace(/\s+$/,'');
 
-        let label       = undefined;
-        let instruction = undefined;
-        let comment     = undefined;
-
         //
         // Parse optional label at start of line
         //
+        let label     = undefined;
         [line, label] = try_parse(line, re_label);
         if (label && label.slice(-1) === ':') {
             label = label.slice(0, -1);
@@ -572,7 +612,9 @@ class Line {
         //
         // Comment?
         //
+        let comment     = undefined;
         [line, comment] = try_parse(line, re_comment);
+        let instruction = undefined;
         if (!comment && line.length) {
             //
             // Parse instruction and operand(s)

@@ -47,6 +47,11 @@ assert.deepEqual(new Line(
     undefined
 ), Line.parse('      '));
 assert.deepEqual(new Line(
+    undefined,
+    undefined,
+    '; a0: even lines destination a5: odd lines destination'
+), Line.parse('       ; a0: even lines destination a5: odd lines destination'));
+assert.deepEqual(new Line(
     'foo',
     undefined,
     undefined
@@ -91,9 +96,64 @@ assert.deepEqual(new Line(
     new Instruction('NOT', 'B', [new Operand(OP_ABSL, 'addr')]),
     undefined
 ), Line.parse('\tnot.b addr'));
+assert.deepEqual(new Line(
+    undefined,
+    new Instruction('MOVE', 'W', [new Operand(OP_INDIRECT, '(a0)'), new Operand(OP_DREG, "d0")]),
+    undefined
+), Line.parse(' move.w (a0),d0'));
 
-assert.equal(Instruction.parse('movem.w (a1)+, a2-a4')[1].cost(), 24);
+let testIParse = function(text, inst, size, ops) {
+    let [unparsed, i] = Instruction.parse(text);
+    assert.equal('', unparsed);
+    assert.equal(i.name, inst);
+    assert.equal(i.size, size);
+    assert.deepEqual(ops.map(function ([a,b]){return new Operand(a,b); }), i.operands, text);
+};
 
+testIParse('addq.l #4,d2', 'ADDQ', 'L', [[OP_IMMEDIATE,'#4'],[OP_DREG,'d2']]);
+testIParse('ext d0', 'EXT', 'W', [[OP_DREG,'d0']]);
+testIParse('ext.l d0', 'EXT', 'L', [[OP_DREG,'d0']]);
+testIParse('exg d0, d1', 'EXG', 'L', [[OP_DREG,'d0'],[OP_DREG,'d1']]);
+testIParse('tst d0', 'TST', 'W', [[OP_DREG,'d0']]);
+testIParse('tst.l (a0)+', 'TST', 'L', [[OP_POSTINCR,'(a0)+']]);
+testIParse('bchg d0,(a0)', 'BCHG', 'B', [[OP_DREG,'d0'],[OP_INDIRECT,'(a0)']]);
+testIParse('bchg d0,d1', 'BCHG', 'L', [[OP_DREG,'d0'],[OP_DREG,'d1']]);
+testIParse('bset #5,(a0)', 'BSET', 'B', [[OP_IMMEDIATE,'#5'],[OP_INDIRECT,'(a0)']]);
+testIParse('bset #14,d1', 'BSET', 'L', [[OP_IMMEDIATE,'#14'],[OP_DREG,'d1']]);
+testIParse('divs.l #4,d2', 'DIVS', 'L', [[OP_IMMEDIATE,'#4'],[OP_DREG,'d2']]);
+
+let testICost = function(text, expectedCost) {
+    let i = Instruction.parse(text);
+    assert.equal(i[0], '', text);
+    assert.equal(i[1].cost(), expectedCost, text + ': estimated cost ' + i[1].cost() + ' expected ' + expectedCost);
+};
+
+testICost('movem.w (a1)+, a2-a4', 24);
+testICost('move.w -(a7),d0'     , 10);
+testICost('move.l -(a7),d0'     , 14);
+testICost('move.w d0,-(a7)'     , 8);
+testICost('move.l d0,-(a7)'     , 12);
+testICost('add.w d0,-(a7)'      , 10);
+testICost('add.l d0,-(a7)'      , 16);
+testICost('exg d0,d1'           , 6);
+testICost('ext.l d0'            , 4);
+testICost('tst.b d0'            , 4);
+testICost('tst.w 22(a0,d0)'     , 14);
+testICost('tst.l absaddr'       , 20);
+testICost('not.b (a0)'          , 12);
+testICost('neg.l -(a7)'         , 22);
+testICost('bchg d0,42(a0)'      , 16);
+testICost('bset d0,d1'          , 8);
+testICost('bchg #3,(a0)'        , 16);
+testICost('bset #17,d1'         , 12);
+testICost('bclr d7,-(a2)'       , 14);
+testICost('bclr d2,d3'          , 10);
+testICost('bclr #19,absaddr'    , 24);
+testICost('bclr #19,d2'         , 14);
+testICost('btst d0,(a0)'        , 8);
+testICost('btst d1,d2'          , 6);
+testICost('btst #3,(a0)+'       , 12);
+testICost('btst #17,d0'         , 10);
 
 // A bunch of code fragments, some from amycoders
 let code0=`
