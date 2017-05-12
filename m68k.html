@@ -3,23 +3,35 @@
         <title>Symbitops - Interactive symbolic bitop calculator</title>
         <script type="text/javascript" src="js/m68k.js"></script>
         <script type="text/javascript">
-var oldonload = window.onload;
+let isFirefox = typeof InstallTrigger !== 'undefined'; // Special handling for firefox due to http://stackoverflow.com/a/41732788/786653
+let oldonload = window.onload;
 window.onload = function() {
     oldonload();
-    var codeElem = document.getElementById('code');
+    let codeElem = document.getElementById('code');
     codeElem.onkeydown = function(e) {
         // tab handling from http://stackoverflow.com/questions/6140632/how-to-handle-tab-in-textarea
         // get caret position/selection
-        var target = e.target;
-        var start = target.selectionStart;
-        var end = target.selectionEnd;
-        var value = target.value;
+        let target = e.target;
+        let start = target.selectionStart;
+        let end = target.selectionEnd;
+        let value = target.value;
 
         let insert_text_at_cursor = function(text) {
-            // set textarea value to: text before caret + tab + text after caret
-            target.value = value.substring(0, start) + text + value.substring(end);
-            // put caret at right position again
-            target.selectionStart = target.selectionEnd = start + text.length;
+            if (isFirefox) {
+                // set textarea value to: text before caret + tab + text after caret
+                target.value = value.substring(0, start) + text + value.substring(end);
+                // put caret at right position again
+                target.selectionStart = target.selectionEnd = start + text.length;
+            } else {
+                document.execCommand('insertText', false, text);
+            }
+        };
+        let start_of_selected_line = function() {
+            let start_of_line = start;
+            while (start_of_line > 0 && value.charAt(start_of_line-1) != '\n') {
+                --start_of_line;
+            }
+            return start_of_line;
         };
 
         if (e.keyCode == 13) {
@@ -29,11 +41,8 @@ window.onload = function() {
                 e.preventDefault();
             } else if (start == end) {
                 // If no selection, figure out current indent level by walking back to the start of the line
-                var start_of_line = start;
-                while (start_of_line > 0 && value.charAt(start_of_line-1) != '\n') {
-                    --start_of_line;
-                }
-                var end_of_indent = start_of_line;
+                let start_of_line = start_of_selected_line();
+                let end_of_indent = start_of_line;
                 while (end_of_indent <= end && ' \t'.indexOf(value.charAt(end_of_indent)) !== -1) {
                     ++end_of_indent;
                 }
@@ -41,9 +50,25 @@ window.onload = function() {
                 e.preventDefault();
             }
         } else if (e.keyCode == 9) {
-            insert_text_at_cursor('\t');
             // prevent focus loss
             e.preventDefault();
+            if (start == end) {
+                // Insert tab if no selection
+                // TODO: Unindent if e.shiftKey
+                insert_text_at_cursor('\t');
+            } else {
+                // (Un-)Indent selection
+                start = start_of_selected_line();
+                let t = value.substring(start, end);
+                if (e.shiftKey) {
+                    t = t.replace(/^\t/gm, '');
+                } else {
+                    t = '\t'+t.replace(/\n(?!$)/g, '\n\t');
+                }
+                target.selectionStart = start;
+                insert_text_at_cursor(t);
+                target.selectionStart = start;
+            }
         }
     };
     document.getElementById('clear').onclick = function() {
