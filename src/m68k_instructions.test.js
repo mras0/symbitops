@@ -20,15 +20,6 @@ assert.deepEqual(['\t #42, d0', 'moveq.L'], try_parse('  moveq.L\t #42, d0', re_
 assert.deepEqual([' #$42, d7', 'add.b'], try_parse('add.b #$42, d7', re_operation));
 assert.deepEqual([' #100, d0', 'MOVEQ'], try_parse('  MOVEQ #100, d0', re_operation));
 
-assert.deepEqual([', d0', '#42'], try_parse('#42, d0', re_immediate));
-assert.deepEqual([', d0', '#-42'], try_parse('#-42, d0', re_immediate));
-assert.deepEqual([', d6', '#$abcd0123'], try_parse('#$abcd0123, d6', re_immediate));
-assert.deepEqual([',d6 ', '#-$abcd0123'], try_parse('#-$abcd0123,d6 ', re_immediate));
-
-assert.deepEqual([', (a0)+', '12(a0, d0.l)'], try_parse('12(a0, d0.l), (a0)+', re_index));
-assert.deepEqual([', (a0)+', '-42(a0)'], try_parse('-42(a0), (a0)+', re_disp16));
-
-
 assert.deepEqual(['', 'd2'], try_parse('d2', re_reglist));
 assert.deepEqual(['', 'd2-d3'], try_parse('d2-d3', re_reglist));
 assert.deepEqual(['', 'd2/d3'], try_parse('d2/d3', re_reglist));
@@ -40,6 +31,8 @@ assert.deepEqual(['D2','D3'], parse_reglist('d2-d3'));
 assert.deepEqual(['D2','D3'], parse_reglist('d2/d3'));
 assert.deepEqual(['D0','D1','D2','D3','D4','D5'], parse_reglist('d0-d4/d5'));
 assert.deepEqual(['D0','D1','D2','D3','D4','D5','A0','A1','A2','A3','A5'], parse_reglist('d0-d4/d5/a0-a3/a5'));
+
+assert.equal('(1+2)*3', (new BinExpr('*', new BinExpr('+', new LitExpr(1), new LitExpr(2)), new LitExpr(3))).toString());
 
 assert.deepEqual(new Line(
     undefined,
@@ -68,37 +61,37 @@ assert.deepEqual(new Line(
 ), Line.parse('foo *comment'));
 assert.deepEqual(new Line(
     'label',
-    new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, '#42'), new Operand(OP_DREG, 'd0')]),
+    new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, new LitExpr(42)), new Operand(OP_DREG, 0)]),
     'this is a comment'
 ), Line.parse('label moveq #42, d0 this is a comment'));
 assert.deepEqual(new Line(
     'label$32_.',
-    new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, '#42'), new Operand(OP_DREG, 'd0')]),
+    new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, new LitExpr(42)), new Operand(OP_DREG, 0)]),
     'this is a comment'
 ), Line.parse('label$32_.: MOveq.l #42, d0 this is a comment'));
 assert.deepEqual(new Line(
     undefined,
-    new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, '#-$7f'), new Operand(OP_DREG, 'D0')]),
+    new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, new NegExpr(new LitExpr(127))), new Operand(OP_DREG, 0)]),
     'this is a comment'
 ), Line.parse(' moveq #-$7f, D0 this is a comment'));
 assert.deepEqual(new Line(
     undefined,
-    new Instruction('NEG', 'W', [new Operand(OP_DREG, 'd0')]),
+    new Instruction('NEG', 'W', [new Operand(OP_DREG, 0)]),
     undefined
 ), Line.parse('\tneg d0'));
 assert.deepEqual(new Line(
     undefined,
-    new Instruction('NEG', 'W', [new Operand(OP_PREINCR, '-(a0)')]),
+    new Instruction('NEG', 'W', [new Operand(OP_PREINCR, 0)]),
     undefined
 ), Line.parse('\tneg -(a0)'));
 assert.deepEqual(new Line(
     undefined,
-    new Instruction('NOT', 'B', [new Operand(OP_ABSL, 'addr')]),
+    new Instruction('NOT', 'B', [new Operand(OP_ABSL, new SymExpr('addr'))]),
     undefined
 ), Line.parse('\tnot.b addr'));
 assert.deepEqual(new Line(
     undefined,
-    new Instruction('MOVE', 'W', [new Operand(OP_INDIRECT, '(a0)'), new Operand(OP_DREG, "d0")]),
+    new Instruction('MOVE', 'W', [new Operand(OP_INDIRECT, 0), new Operand(OP_DREG, 0)]),
     undefined
 ), Line.parse(' move.w (a0),d0'));
 
@@ -107,20 +100,34 @@ let testIParse = function(text, inst, size, ops) {
     assert.equal('', unparsed);
     assert.equal(i.name, inst);
     assert.equal(i.size, size);
-    assert.deepEqual(ops.map(function ([a,b]){return new Operand(a,b); }), i.operands, text);
+    assert.deepEqual(ops.map(function ([a,b]){return new Operand(a,b); }), i.operands);//, text);
 };
 
-testIParse('addq.l #4,d2', 'ADDQ', 'L', [[OP_IMMEDIATE,'#4'],[OP_DREG,'d2']]);
-testIParse('ext d0', 'EXT', 'W', [[OP_DREG,'d0']]);
-testIParse('ext.l d0', 'EXT', 'L', [[OP_DREG,'d0']]);
-testIParse('exg d0, d1', 'EXG', 'L', [[OP_DREG,'d0'],[OP_DREG,'d1']]);
-testIParse('tst d0', 'TST', 'W', [[OP_DREG,'d0']]);
-testIParse('tst.l (a0)+', 'TST', 'L', [[OP_POSTINCR,'(a0)+']]);
-testIParse('bchg d0,(a0)', 'BCHG', 'B', [[OP_DREG,'d0'],[OP_INDIRECT,'(a0)']]);
-testIParse('bchg d0,d1', 'BCHG', 'L', [[OP_DREG,'d0'],[OP_DREG,'d1']]);
-testIParse('bset #5,(a0)', 'BSET', 'B', [[OP_IMMEDIATE,'#5'],[OP_INDIRECT,'(a0)']]);
-testIParse('bset #14,d1', 'BSET', 'L', [[OP_IMMEDIATE,'#14'],[OP_DREG,'d1']]);
-testIParse('divs.l #4,d2', 'DIVS', 'L', [[OP_IMMEDIATE,'#4'],[OP_DREG,'d2']]);
+testIParse('addq.l #4,d2', 'ADDQ', 'L', [[OP_IMMEDIATE,new LitExpr(4)],[OP_DREG,2]]);
+testIParse('ext d0', 'EXT', 'W', [[OP_DREG,0]]);
+testIParse('ext.l d0', 'EXT', 'L', [[OP_DREG,0]]);
+testIParse('exg d0, d1', 'EXG', 'L', [[OP_DREG,0],[OP_DREG,1]]);
+testIParse('tst d0', 'TST', 'W', [[OP_DREG,0]]);
+testIParse('tst.l (a0)+', 'TST', 'L', [[OP_POSTINCR,0]]);
+testIParse('bchg d0,(a0)', 'BCHG', 'B', [[OP_DREG,0],[OP_INDIRECT,0]]);
+testIParse('bchg d0,d1', 'BCHG', 'L', [[OP_DREG,0],[OP_DREG,1]]);
+testIParse('bset #5,(a0)', 'BSET', 'B', [[OP_IMMEDIATE,new LitExpr(5)],[OP_INDIRECT,0]]);
+testIParse('bset #14,d1', 'BSET', 'L', [[OP_IMMEDIATE,new LitExpr(14)],[OP_DREG,1]]);
+testIParse('divs.l #4,d2', 'DIVS', 'L', [[OP_IMMEDIATE,new LitExpr(4)],[OP_DREG,2]]);
+testIParse('move.b d3,-(a3)', 'MOVE', 'B', [[OP_DREG,3],[OP_PREINCR,3]]);
+testIParse('move.b d3,(a3)+', 'MOVE', 'B', [[OP_DREG,3],[OP_POSTINCR,3]]);
+testIParse('add.w 22(a0),d4', 'ADD', 'W', [[OP_DISP16,[new LitExpr(22), 0]],[OP_DREG,4]]);
+testIParse('add.w 42(a2,d3),d4', 'ADD', 'W', [[OP_INDEX,[new LitExpr(42), 2, 3]],[OP_DREG,4]]);
+testIParse('move  10(pc), d0', 'MOVE', 'W', [[OP_DISP16PC,[new LitExpr(10)]],[OP_DREG,0]]);
+testIParse('move.l 2(pc,d2), d0', 'MOVE', 'L', [[OP_INDEXPC,[new LitExpr(2), 2]],[OP_DREG,0]]);
+testIParse('movem.l d0-d2/a0-a2,-(a7)', 'MOVEM', 'L', [[OP_REGLIST, 0x0707],[OP_PREINCR,7]]);
+
+testIParse('move    #( 42 ) ,d0', 'MOVE', 'W', [[OP_IMMEDIATE, new LitExpr(42)],[OP_DREG,0]]);
+testIParse('moveq   #2+3, d0', 'MOVEQ', 'L', [[OP_IMMEDIATE, new BinExpr('+', new LitExpr(2), new LitExpr(3))],[OP_DREG,0]]);
+testIParse('moveq   #5-4+1, d0', 'MOVEQ', 'L', [[OP_IMMEDIATE, new BinExpr('+', new BinExpr('-', new LitExpr(5), new LitExpr(4)), new LitExpr(1))],[OP_DREG,0]]);
+testIParse('lsr     #1+2*3, d0', 'LSR', 'W', [[OP_IMMEDIATE, new BinExpr('+', new LitExpr(1), new BinExpr('*', new LitExpr(2), new LitExpr(3)))],[OP_DREG,0]]);
+
+assert.equal('MOVEM.L\tD0-D2/D4/D6-A3, -(A7)', Instruction.parse('movem.l d0-d2/d4/d6-d7/a0-a3,-(a7)')[1].toString());
 
 let testICost = function(text, expectedCost) {
     let i = Instruction.parse(text);
@@ -154,6 +161,136 @@ testICost('btst d0,(a0)'        , 8);
 testICost('btst d1,d2'          , 6);
 testICost('btst #3,(a0)+'       , 12);
 testICost('btst #17,d0'         , 10);
+testICost('neg  10(pc)'         , 16);
+testICost('lea  2(pc,d0),a2'    , 12);
+
+let testEncode = function(text, expectedEncoding) {
+    let i = Instruction.parse(text);
+    assert.equal(i[0], '', text);
+    let h = x => '$'+('0000'+x.toString(16)).slice(-4);
+    assert.deepEqual(i[1].encode(), expectedEncoding, text + ': encdoded ' + i[1].encode().map(h) + ' expected ' + expectedEncoding.map(h));
+};
+
+// MOVEQ
+testEncode('MOVEQ   #0, d0',                [0x7000]);
+testEncode('MOVEQ   #-2, d3',               [0x76fe]);
+testEncode('MOVEQ   #15, d7',               [0x7e0F]);
+// EXG
+testEncode('EXG     d0,d0',                 [0xc140]);
+testEncode('EXG     d2,d3',                 [0xc543]);
+// RTS
+testEncode('rts',                           [0x4e75]);
+// MOVE
+testEncode('move    d0, d1',                [0x3200]);
+testEncode('move    d1, d0',                [0x3001]);
+testEncode('move.l  d2, d3',                [0x2602]);
+testEncode('move.b  d4, d5',                [0x1a04]);
+testEncode('move.w  d0, (a0)',              [0x3080]);
+testEncode('move.w  d0, (a0)+',             [0x30C0]);
+testEncode('move.w  d0, -(a0)',             [0x3100]);
+testEncode('move.b  $1234(a4), d5',         [0x1a2c, 0x1234]);
+testEncode('move.w  $45(a0,d2), d1',        [0x3230, 0x2045]);
+testEncode('move.b  #$81, d4',              [0x183c, 0x0081]);
+testEncode('move.w  #$4321, d5',            [0x3a3c, 0x4321]);
+testEncode('move.l  #$1234abcd, d6',        [0x2c3c, 0x1234, 0xabcd]);
+testEncode('move.w  #$0aaa, $dff180',       [0x33fc, 0x0aaa, 0x00df, 0xf180]);
+// MOVEA
+testEncode('move.w  d0, a0',                [0x3040]);
+testEncode('move.l  a0, d7',                [0x2e08]);
+testEncode('move.l  (a2)+, a4',             [0x285a]);
+// Bcc
+testEncode('bra.s   blah',                  [0x60fe]);
+testEncode('bra.w   blah',                  [0x6000, 0xfffe]);
+testEncode('bcs.s   blah',                  [0x65fe]);
+// DBcc
+testEncode('dbf     d0, .blah',             [0x51c8, 0xffff])
+testEncode('dbcc    d7, .blah',             [0x54cf, 0xffff])
+// ADDQ/SUBQ
+testEncode('addq.b  #4, d5',                [0x5805]);
+testEncode('addq.w  #1, a0',                [0x5248]);
+testEncode('addq.l  #2, a3',                [0x548B]);
+testEncode('addq.l  #4, d7',                [0x5887]);
+testEncode('subq    #1, d0',                [0x5340]);
+testEncode('subq    #8, $1234(a2)',         [0x516a, 0x1234]);
+// ADD
+testEncode('add.w   d1, d0',                [0xd041]);
+testEncode('add.l   d0, $1234(a3)',         [0xd1ab, 0x1234]);
+testEncode('add.l   (a3)+, d2',             [0xd49b]);
+// ADDI
+testEncode('add.b   #42, d0',               [0x0600, 0x002A]);
+testEncode('add.b   #12, $1234(a0)',        [0x0628, 0x000C, 0x1234]);
+// ADDA
+testEncode('add.w   d0, a0',                [0xd0c0]);
+testEncode('add.w   a0, d0',                [0xd048]);
+testEncode('add.l   d1, a2',                [0xd5c1]);
+testEncode('add.l   (a0), a2',              [0xd5d0]);
+// SUB
+testEncode('sub.l   d2, d3',                [0x9682]);
+// SUBI
+testEncode('sub.w   #42, d4',               [0x0444, 0x002A]);
+// SUBA
+testEncode('sub.w   d0, a0',                [0x90c0]);
+testEncode('sub.l   a3, d7',                [0x9e8b]);
+// LEA
+testEncode('lea     $1234(a1), a2',         [0x45e9, 0x1234]);
+testEncode('lea     $10(pc), a0',           [0x41fa, 0x000e]);
+testEncode('lea     $0(pc,d0), a1',         [0x43fb, 0x00fe]);
+// AND
+testEncode('and     d1, d2',                [0xc441]);
+testEncode('and.l   d2, d3',                [0xc682]);
+testEncode('and.b   (a1), d4',              [0xc811]);
+testEncode('and.b   d5, $1234(a7)',         [0xcb2f, 0x1234]);
+testEncode('and.w   #$ff01, d5',            [0x0245, 0xff01]);
+// EOR
+testEncode('eor     d1, d2',                [0xb342]);
+testEncode('eor.b   #10, d2',               [0x0a02, 0x000a]);
+// OR
+testEncode('or     d1, d2',                 [0x8441]);
+testEncode('or.b   #10, d2',                [0x0002, 0x000a]);
+// CMP
+testEncode('cmp    d1, d2',                 [0xb441]);
+testEncode('cmp.b  #10, d2',                [0x0c02, 0x000a]);
+// LSL/LSR
+testEncode('lsl    #4, d0',                 [0xe948]);
+testEncode('lsl.b  d1, d2',                 [0xe32a]);
+testEncode('lsr.l  #4, d0',                 [0xe888]);
+// ROL/ROR
+testEncode('rol    #7, d1',                 [0xef59]);
+testEncode('ror.b  d3, d4',                 [0xe63c]);
+// ASL/ASR
+testEncode('asl    #7, d1',                 [0xef41]);
+testEncode('asr.b  d3, d4',                 [0xe624]);
+// MOVEM
+testEncode('movem.w d0-d7/a0/a2, -(a7)',    [0x48a7, 0xffa0]);
+testEncode('movem.l (a7)+, d2-d3/a2-a4',    [0x4cdf, 0x1c0c]);
+testEncode('movem   d0-a6, -(a7)',          [0x48a7, 0xfffe]);
+// BSET/BCLR/BCHG/BTST
+testEncode('bset    d3, d6',                [0x07c6]);
+testEncode('bset    d3, (a0)',              [0x07d0]);
+testEncode('bset    #4, d2',                [0x08c2, 0x0004]);
+testEncode('bclr    #2, (a1)+',             [0x0899, 0x0002]);
+testEncode('bchg    #1, $12(a1,d1)',        [0x0871, 0x0001, 0x1012]);
+testEncode('btst    d0, d1',                [0x0101]);
+// MULS/MULU
+testEncode('muls.w  d0, d1',                [0xc3c0]);
+testEncode('mulu.w  (a1), d2',              [0xc4d1]);
+// DIVS/DIVU
+testEncode('divs.w  d2, d3',                [0x87c2]);
+testEncode('divu.w  -(a2), d3',             [0x86e2]);
+// NOT, NEG, CLR
+testEncode('not.b   d0',                    [0x4600]);
+testEncode('not     (a0)+',                 [0x4658]);
+testEncode('not.l   d7',                    [0x4687]);
+testEncode('neg.l   d2',                    [0x4482]);
+testEncode('clr.b   -(a2)',                 [0x4222]);
+// ADDX, SUBX
+testEncode('addx.b  d0, d1',                [0xd300]);
+testEncode('subx.l  d2, d3',                [0x9782]);
+// TST
+testEncode('tst     d0',                    [0x4a40]);
+testEncode('tst.b   $1234(a2)',             [0x4a2a, 0x1234]);
+
+
 
 // A bunch of code fragments, some from amycoders
 let code0=`
@@ -367,6 +504,8 @@ unpack:
 .quit:
         movem.l (a7)+, d2-d3/a2
         rts
+
+        move.l  $1234(a0), d0
 `.split('\n');
 
 code1.forEach(function (text) {
@@ -380,16 +519,21 @@ code1.forEach(function (text) {
             console.log('Failed to determine cost for ' + s);
             throw e;
         }
+        try {
+            line.instruction.encode();
+        } catch (e) {
+            console.log('Failed to encode ' + s);
+        }
     }
 });
 
 let ls = parse_lines('\tMOVE.b #42,D0\n\tSub.w #66,d0\n\tMOVE.L A0,A1\n\tMOVE.W d0,(a0)\n\tMOVEQ #-8,d0');
 assert.equal(ls.length, 5);
-assert.deepEqual(ls[0].instruction, new Instruction('MOVE', 'B', [new Operand(OP_IMMEDIATE, '#42'), new Operand(OP_DREG, 'D0')]));
-assert.deepEqual(ls[1].instruction, new Instruction('SUB', 'W', [new Operand(OP_IMMEDIATE, '#66'), new Operand(OP_DREG, 'd0')]));
-assert.deepEqual(ls[2].instruction, new Instruction('MOVE', 'L', [new Operand(OP_AREG, 'A0'), new Operand(OP_AREG, 'A1')]));
-assert.deepEqual(ls[3].instruction, new Instruction('MOVE', 'W', [new Operand(OP_DREG, 'd0'), new Operand(OP_INDIRECT, '(a0)')]));
-assert.deepEqual(ls[4].instruction, new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, '#-8'), new Operand(OP_DREG, 'd0')]));
+assert.deepEqual(ls[0].instruction, new Instruction('MOVE', 'B', [new Operand(OP_IMMEDIATE, new LitExpr(42)), new Operand(OP_DREG, 0)]));
+assert.deepEqual(ls[1].instruction, new Instruction('SUB', 'W', [new Operand(OP_IMMEDIATE, new LitExpr(66)), new Operand(OP_DREG, 0)]));
+assert.deepEqual(ls[2].instruction, new Instruction('MOVE', 'L', [new Operand(OP_AREG, 0), new Operand(OP_AREG, 1)]));
+assert.deepEqual(ls[3].instruction, new Instruction('MOVE', 'W', [new Operand(OP_DREG, 0), new Operand(OP_INDIRECT, 0)]));
+assert.deepEqual(ls[4].instruction, new Instruction('MOVEQ', 'L', [new Operand(OP_IMMEDIATE, new NegExpr(new LitExpr(8))), new Operand(OP_DREG, 0)]));
 let f = to_code(ls);
 D0 = 'D0';
 A0 = 'A0';
@@ -408,4 +552,22 @@ state = { writeline : function (msg) {} };
 f();
 assert.equal(5, called);
 
-//console.log(to_code(parse_lines('\tMOVE.L D0, 22 ( A0 )\n\tMOVE.B D1,12( A0, D0.w)\n\tMOVE.L D0,(a0,d0)')).toString());
+//console.log(to_code(parse_lines('\tMOVE.L D0, 22 ( A0 )\n\tMOVE.B D1,12( A0, D0.w)\n\tMOVE.L D0,1234(a0,d0)')).toString());
+
+function testCodegen(itext, expected_code) {
+    const code = to_code(parse_lines('\t'+itext)).toString().split('\n');
+    assert(code.length>2);
+    if (expected_code!=code[1]) {
+        console.log('Instruction: ' + itext);
+        console.log('Expecting: ' + expected_code);
+        console.log('Actual: ' + code[1]);
+    }
+    assert.equal(expected_code, code[1]);
+};
+testCodegen('moveq  #42+2, d0'                  , 'MOVEQ.L(42+2, D0)');
+testCodegen('move.b (a0), d0'                   , 'MOVE.B([A0], D0)');
+testCodegen('move   $1234(a1,d2), d0'           , 'MOVE.W([A1, D2, 4660], D0)');
+testCodegen('add.b  (offset+2)*s(a4,d1), d2'    , 'ADD.B([A4, D1, (offset+2)*s], D2)');
+testCodegen('move.l $10(pc), d0'                , 'MOVE.L([PC, 16], D0)');
+testCodegen('move.b 1(pc,d0), d1'               , 'MOVE.B([PC, D0, 1], D1)');
+testCodegen('move.w #blah, addr'                , 'MOVE.W(blah, [addr])');
