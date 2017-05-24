@@ -1954,12 +1954,8 @@ function get_size_postfix(size) {
 }
 
 state.log_instruction = function (name, sizestr, operands, result) {
-    if (typeof result === 'undefined') {
-        result = '';
-    } else {
-        result = '\t; ' + result;
-    }
-    this.log('\t' + name + sizestr + '\t' + rightpad(operands, MAX_INSTRUCTION_LENGTH) + result);
+    //this.log('\t' + name + sizestr + '\t' + (result ? (rightpad(operands, MAX_INSTRUCTION_LENGTH) + '\t' + result) : operands);
+    this.log('\t' + name + sizestr + '\t' + (result ? rightpad(operands, MAX_INSTRUCTION_LENGTH) + '\t' + result : operands));
 };
 
 state.access_mem = function (size, addr, val) {
@@ -2018,6 +2014,9 @@ state.access_mem = function (size, addr, val) {
 };
 
 state.calc_ea = function (name, size) {
+    if (name.length === 1 && typeof name[0] === 'number') {
+        return BitvalN.constN(32, name[0]);
+    }
     if (name[0][0] !== 'A') throw new Error('Invalid address: [' + name.join() + ']');
     let addr = this[name[0]];
     if (name.length >= 2) {
@@ -2286,6 +2285,58 @@ exports.LEA = function (src, dst) {
 };
 exports.LEA.L = exports.LEA;
 
+function pretty_reglist(l) {
+    let expected, runstart, lastmatch;
+    let res = '';
+
+    function output_range() {
+        if (res.length) res += '/';
+        res += runstart;
+        if (lastmatch) res += '-' + lastmatch;
+    };
+
+    l.forEach(function (r, index) {
+        r = r.toString();
+        if (r !== expected) {
+            if (expected) output_range();
+            runstart = r;
+            lastmatch = undefined;
+        } else {
+            lastmatch = r;
+        }
+        expected = r[0] + (parseInt(r[1]) + 1) + r.substring(2);
+    });
+    if (runstart) {
+        output_range();
+    }
+    return res;
+};
+
+function do_movem(src, dst, size) {
+    const sizestr = get_size_postfix(size);
+    if (src.length === 2 && src[1] === '+') {
+        state.log_instruction('MOVEM', sizestr, format_ea(src) + ', ' + pretty_reglist(dst));
+        dst.forEach(function (r) {
+            state[r] = state.do_ea(size, src)();
+        });
+    } else if (dst.length === 2 && dst[1] === '-') {
+        state.log_instruction('MOVEM', sizestr, pretty_reglist(src) + ', ' + format_ea(dst));
+        src.reverse().forEach(function (r) {
+            state.do_ea(size, dst)(state[r]);
+        });
+    } else {
+        throw new Error('Not implemented MOVEM size=' + size + ' ' + src + ', ' + dst);
+    }
+}
+
+exports.MOVEM = function (src, dst) {
+    return do_movem(src, dst, 16);
+};
+exports.MOVEM.W = exports.MOVEM;
+exports.MOVEM.L = function (src, dst) {
+    return do_movem(src, dst, 32);
+};
+
 //
 // Registers
 //
@@ -2444,7 +2495,7 @@ global.c2p_step4 = function (n, m) {
 },{"./m68k.js":8,"assert":1}],11:[function(require,module,exports){
 // TODO:
 //          Labels (to allow real instruction encoding)
-//          Code for register lists
+//          Handle dN.w/dN.l - as optional arg in list (if .l)? Could be handled same as scale..
 
 const assert = require('assert');
 
@@ -2580,6 +2631,10 @@ class Expr {
     precedence() {
         return -1;
     }
+
+    to_code() {
+        return this.toString();
+    }
 };
 
 class LitExpr extends Expr {
@@ -2611,6 +2666,10 @@ class SymExpr extends Expr {
 
     value() {
         return this.val;
+    }
+
+    to_code() {
+        return this.val.replace('.', '$');
     }
 };
 
@@ -2801,7 +2860,7 @@ function reglist_string(m) {
     const names = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7'];
     let last = -1;
     let r = '';
-    for (let b = 0; b < 15; ++b) {
+    for (let b = 0; b < 17; ++b) {
         if (m & 1 << b) {
             if (last === -1) {
                 last = b;
@@ -2815,7 +2874,6 @@ function reglist_string(m) {
             last = -1;
         }
     }
-    assert.equal(last, -1); // handle a7 being part of run some day
     return r;
 };
 
@@ -2942,6 +3000,36 @@ class Operand {
         return this.val.value();
     }
 
+    to_code() {
+        switch (this.type) {
+            case OP_DREG:
+            case OP_AREG:
+                return this.toString();
+            case OP_INDIRECT:
+                return '[A' + this.val + ']';
+            case OP_POSTINCR:
+                return '[A' + this.val + ', \'+\']';
+            case OP_PREINCR:
+                return '[A' + this.val + ', \'-\']';
+            case OP_DISP16:
+                return '[A' + this.val[1] + ', ' + this.val[0].to_code() + ']';
+            case OP_INDEX:
+                return '[A' + this.val[1] + ', D' + this.val[2] + ', ' + this.val[0].to_code() + ']';
+            case OP_ABSW:
+            case OP_ABSL:
+                return '[' + this.val.to_code() + ']';
+            case OP_DISP16PC:
+                return '[PC, ' + this.val[0] + ']';
+            case OP_INDEXPC:
+                return '[PC, D' + this.val[1] + ', ' + this.val[0].to_code() + ']';
+            case OP_IMMEDIATE:
+                return this.val.to_code();
+            case OP_REGLIST:
+                return '[' + parse_reglist(reglist_string(this.val)).join(', ') + ']';
+        }
+        throw new Error('Operand.to_code: Not implemented for "' + this + '" ' + op_type_str(this.type));
+    }
+
     static parse(line) {
         const origline = line;
         let l, p;
@@ -3023,7 +3111,6 @@ class Operand {
         }
         assert.equal(args.length, 2);
         assert.equal(args[1][0], 'D');
-        // TODO: Handle dN.w/dN.l - as optional arg in list (if .l)? Could be handled same as scale..
         let indexreg = parseInt(args[1][1]);
         if (basereg === 8) {
             return [line, new Operand(OP_INDEXPC, [offset, indexreg])];
@@ -3607,45 +3694,15 @@ function parse_lines(text) {
     });
 };
 
-function operand_to_code(op) {
-    function expr_to_code(e) {
-        return e.toString().substring(1);
-    };
-    switch (op.type) {
-        case OP_DREG:
-        case OP_AREG:
-            return op.toString();
-        case OP_INDIRECT:
-            return '[A' + op.val + ']';
-        case OP_POSTINCR:
-            return '[A' + op.val + ', \'+\']';
-        case OP_PREINCR:
-            return '[A' + op.val + ', \'-\']';
-        case OP_DISP16:
-            return '[A' + op.val[1] + ', ' + op.val[0] + ']';
-        case OP_INDEX:
-            return '[A' + op.val[1] + ', D' + op.val[2] + ', ' + op.val[0] + ']';
-        case OP_ABSW:
-        case OP_ABSL:
-            return '[' + op.val + ']';
-        case OP_DISP16PC:
-            return '[PC, ' + op.val[0] + ']';
-        case OP_INDEXPC:
-            return '[PC, D' + op.val[1] + ', ' + op.val[0] + ']';
-        case OP_IMMEDIATE:
-            return expr_to_code(op);
-        //case OP_REGLIST:    return ;
-    }
-    throw new Error('operand_to_code: Not implemented for "' + op + '" ' + op_type_str(op.type));
-};
-
 function to_code(lines) {
     let code = '';
     lines.forEach(function (line) {
         let i = line.instruction;
         if (i) {
             try {
-                code += i.name + '.' + i.size + '(' + i.operands.map(operand_to_code).join(', ') + ')\n';
+                code += i.name + (i.size ? '.' + i.size : '') + '(' + i.operands.map(function (op) {
+                    return op.to_code();
+                }).join(', ') + ')\n';
             } catch (e) {
                 code += 'state.writeline(\'Codegen not implemented for "' + i + '" - "' + e + '"\')\n';
             }

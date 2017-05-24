@@ -506,6 +506,8 @@ unpack:
         rts
 
         move.l  $1234(a0), d0
+
+        MOVEM.L d0-a6, -(a7)
 `.split('\n');
 
 code1.forEach(function (text) {
@@ -526,6 +528,30 @@ code1.forEach(function (text) {
         }
     }
 });
+
+function testCodegen(itext, expected_code) {
+    const code = to_code(parse_lines('\t'+itext)).toString().split('\n');
+    assert(code.length>2);
+    if (expected_code!=code[1]) {
+        console.log('Instruction: ' + itext);
+        console.log('Expecting: ' + expected_code);
+        console.log('Actual: ' + code[1]);
+    }
+    assert.equal(expected_code, code[1]);
+};
+testCodegen('moveq  #42+2, d0'                  , 'MOVEQ.L(42+2, D0)');
+testCodegen('move.b (a0), d0'                   , 'MOVE.B([A0], D0)');
+testCodegen('move   $1234(a1,d2), d0'           , 'MOVE.W([A1, D2, 4660], D0)');
+testCodegen('add.b  (offset+2)*s(a4,d1), d2'    , 'ADD.B([A4, D1, (offset+2)*s], D2)');
+testCodegen('move.l $10(pc), d0'                , 'MOVE.L([PC, 16], D0)');
+testCodegen('move.b 1(pc,d0), d1'               , 'MOVE.B([PC, D0, 1], D1)');
+testCodegen('move.w #blah, addr'                , 'MOVE.W(blah, [addr])');
+testCodegen('move.w #blah, addr'                , 'MOVE.W(blah, [addr])');
+testCodegen('move.w #10, 42+2*4+x'              , 'MOVE.W(10, [42+2*4+x])');
+testCodegen('bra.s  .out'                       , 'BRA.B([$out])');
+testCodegen('movem.l d0-d3/a0, -(a7)'           , 'MOVEM.L([D0, D1, D2, D3, A0], [A7, \'-\'])');
+testCodegen('movem d0-a7, -(a7)'                , 'MOVEM.W([D0, D1, D2, D3, D4, D5, D6, D7, A0, A1, A2, A3, A4, A5, A6, A7], [A7, \'-\'])');
+testCodegen('rts'                               , 'RTS()');
 
 let ls = parse_lines('\tMOVE.b #42,D0\n\tSub.w #66,d0\n\tMOVE.L A0,A1\n\tMOVE.W d0,(a0)\n\tMOVEQ #-8,d0');
 assert.equal(ls.length, 5);
@@ -553,21 +579,3 @@ f();
 assert.equal(5, called);
 
 //console.log(to_code(parse_lines('\tMOVE.L D0, 22 ( A0 )\n\tMOVE.B D1,12( A0, D0.w)\n\tMOVE.L D0,1234(a0,d0)')).toString());
-
-function testCodegen(itext, expected_code) {
-    const code = to_code(parse_lines('\t'+itext)).toString().split('\n');
-    assert(code.length>2);
-    if (expected_code!=code[1]) {
-        console.log('Instruction: ' + itext);
-        console.log('Expecting: ' + expected_code);
-        console.log('Actual: ' + code[1]);
-    }
-    assert.equal(expected_code, code[1]);
-};
-testCodegen('moveq  #42+2, d0'                  , 'MOVEQ.L(42+2, D0)');
-testCodegen('move.b (a0), d0'                   , 'MOVE.B([A0], D0)');
-testCodegen('move   $1234(a1,d2), d0'           , 'MOVE.W([A1, D2, 4660], D0)');
-testCodegen('add.b  (offset+2)*s(a4,d1), d2'    , 'ADD.B([A4, D1, (offset+2)*s], D2)');
-testCodegen('move.l $10(pc), d0'                , 'MOVE.L([PC, 16], D0)');
-testCodegen('move.b 1(pc,d0), d1'               , 'MOVE.B([PC, D0, 1], D1)');
-testCodegen('move.w #blah, addr'                , 'MOVE.W(blah, [addr])');

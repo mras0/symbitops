@@ -1,6 +1,6 @@
 // TODO:
 //          Labels (to allow real instruction encoding)
-//          Code for register lists
+//          Handle dN.w/dN.l - as optional arg in list (if .l)? Could be handled same as scale..
 
 const assert = require('assert');
 
@@ -136,6 +136,10 @@ class Expr {
     precedence() {
         return -1;
     }
+
+    to_code() {
+        return this.toString();
+    }
 };
 
 class LitExpr extends Expr {
@@ -167,6 +171,10 @@ class SymExpr extends Expr {
 
     value() {
         return this.val;
+    }
+
+    to_code() {
+        return this.val.replace('.', '$');
     }
 };
 
@@ -358,7 +366,7 @@ function reglist_string(m) {
     const names = ['D0','D1','D2','D3','D4','D5','D6','D7','A0','A1','A2','A3','A4','A5','A6','A7'];
     let last = -1;
     let r = '';
-    for (let b = 0; b < 15; ++b) {
+    for (let b = 0; b < 17; ++b) {
         if (m & (1<<b)) {
             if (last === -1) {
                 last = b;
@@ -372,7 +380,6 @@ function reglist_string(m) {
             last = - 1;
         }
     }
-    assert.equal(last, -1); // handle a7 being part of run some day
     return r;
 };
 
@@ -467,6 +474,25 @@ class Operand {
         return this.val.value();
     }
 
+    to_code() {
+        switch (this.type) {
+            case OP_DREG:
+            case OP_AREG:       return this.toString();
+            case OP_INDIRECT:   return '[A' + this.val + ']';
+            case OP_POSTINCR:   return '[A' + this.val + ', \'+\']';
+            case OP_PREINCR:    return '[A' + this.val + ', \'-\']';
+            case OP_DISP16:     return '[A' + this.val[1] + ', ' + this.val[0].to_code() + ']';
+            case OP_INDEX:      return '[A' + this.val[1] + ', D' + this.val[2] + ', ' + this.val[0].to_code() + ']';
+            case OP_ABSW:
+            case OP_ABSL:       return '[' + this.val.to_code() + ']';
+            case OP_DISP16PC:   return '[PC, ' + this.val[0] + ']';
+            case OP_INDEXPC:    return '[PC, D' + this.val[1] + ', ' + this.val[0].to_code() + ']';
+            case OP_IMMEDIATE:  return this.val.to_code();
+            case OP_REGLIST:    return '[' + parse_reglist(reglist_string(this.val)).join(', ') + ']';
+        }
+        throw new Error('Operand.to_code: Not implemented for "' + this + '" ' + op_type_str(this.type));
+    }
+
     static parse(line) {
         const origline = line;
         let l, p;
@@ -552,7 +578,6 @@ class Operand {
         }
         assert.equal(args.length, 2);
         assert.equal(args[1][0], 'D');
-        // TODO: Handle dN.w/dN.l - as optional arg in list (if .l)? Could be handled same as scale..
         let indexreg = parseInt(args[1][1]);
         if (basereg === 8) {
             return [line, new Operand(OP_INDEXPC, [offset, indexreg])];
@@ -1104,33 +1129,13 @@ function parse_lines(text) {
     return text.split('\n').map(function (l) { return Line.parse(l); });
 };
 
-function operand_to_code(op) {
-    function expr_to_code(e) { return e.toString().substring(1); };
-    switch (op.type) {
-        case OP_DREG:
-        case OP_AREG:       return op.toString();
-        case OP_INDIRECT:   return '[A' + op.val + ']';
-        case OP_POSTINCR:   return '[A' + op.val + ', \'+\']';
-        case OP_PREINCR:    return '[A' + op.val + ', \'-\']';
-        case OP_DISP16:     return '[A' + op.val[1] + ', ' + op.val[0] + ']';
-        case OP_INDEX:      return '[A' + op.val[1] + ', D' + op.val[2] + ', ' + op.val[0] + ']';
-        case OP_ABSW:
-        case OP_ABSL:       return '[' + op.val + ']';
-        case OP_DISP16PC:   return '[PC, ' + op.val[0] + ']';
-        case OP_INDEXPC:    return '[PC, D' + op.val[1] + ', ' + op.val[0] + ']';
-        case OP_IMMEDIATE:  return expr_to_code(op);
-        //case OP_REGLIST:    return ;
-    }
-    throw new Error('operand_to_code: Not implemented for "' + op + '" ' + op_type_str(op.type));
-};
-
 function to_code(lines) {
     let code = '';
     lines.forEach(function (line) {
         let i = line.instruction;
         if (i) {
             try {
-                code += i.name + '.' + i.size + '(' + i.operands.map(operand_to_code).join(', ') + ')\n';
+                code += i.name + (i.size?'.' + i.size:'') + '(' + i.operands.map(function (op) { return op.to_code(); }).join(', ') + ')\n';
             } catch(e) {
                 code += 'state.writeline(\'Codegen not implemented for "' + i + '" - "' + e + '"\')\n';
             }

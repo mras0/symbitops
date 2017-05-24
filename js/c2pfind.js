@@ -2092,12 +2092,8 @@ function get_size_postfix(size) {
 }
 
 state.log_instruction = function (name, sizestr, operands, result) {
-    if (typeof result === 'undefined') {
-        result = '';
-    } else {
-        result = '\t; ' + result;
-    }
-    this.log('\t' + name + sizestr + '\t' + rightpad(operands, MAX_INSTRUCTION_LENGTH) + result);
+    //this.log('\t' + name + sizestr + '\t' + (result ? (rightpad(operands, MAX_INSTRUCTION_LENGTH) + '\t' + result) : operands);
+    this.log('\t' + name + sizestr + '\t' + (result ? rightpad(operands, MAX_INSTRUCTION_LENGTH) + '\t' + result : operands));
 };
 
 state.access_mem = function (size, addr, val) {
@@ -2156,6 +2152,9 @@ state.access_mem = function (size, addr, val) {
 };
 
 state.calc_ea = function (name, size) {
+    if (name.length === 1 && typeof name[0] === 'number') {
+        return BitvalN.constN(32, name[0]);
+    }
     if (name[0][0] !== 'A') throw new Error('Invalid address: [' + name.join() + ']');
     let addr = this[name[0]];
     if (name.length >= 2) {
@@ -2423,6 +2422,58 @@ exports.LEA = function (src, dst) {
     state.log_instruction('LEA', '', format_ea(src) + ', ' + dst, dst + ' = ' + state[dst]);
 };
 exports.LEA.L = exports.LEA;
+
+function pretty_reglist(l) {
+    let expected, runstart, lastmatch;
+    let res = '';
+
+    function output_range() {
+        if (res.length) res += '/';
+        res += runstart;
+        if (lastmatch) res += '-' + lastmatch;
+    };
+
+    l.forEach(function (r, index) {
+        r = r.toString();
+        if (r !== expected) {
+            if (expected) output_range();
+            runstart = r;
+            lastmatch = undefined;
+        } else {
+            lastmatch = r;
+        }
+        expected = r[0] + (parseInt(r[1]) + 1) + r.substring(2);
+    });
+    if (runstart) {
+        output_range();
+    }
+    return res;
+};
+
+function do_movem(src, dst, size) {
+    const sizestr = get_size_postfix(size);
+    if (src.length === 2 && src[1] === '+') {
+        state.log_instruction('MOVEM', sizestr, format_ea(src) + ', ' + pretty_reglist(dst));
+        dst.forEach(function (r) {
+            state[r] = state.do_ea(size, src)();
+        });
+    } else if (dst.length === 2 && dst[1] === '-') {
+        state.log_instruction('MOVEM', sizestr, pretty_reglist(src) + ', ' + format_ea(dst));
+        src.reverse().forEach(function (r) {
+            state.do_ea(size, dst)(state[r]);
+        });
+    } else {
+        throw new Error('Not implemented MOVEM size=' + size + ' ' + src + ', ' + dst);
+    }
+}
+
+exports.MOVEM = function (src, dst) {
+    return do_movem(src, dst, 16);
+};
+exports.MOVEM.W = exports.MOVEM;
+exports.MOVEM.L = function (src, dst) {
+    return do_movem(src, dst, 32);
+};
 
 //
 // Registers

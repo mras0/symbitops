@@ -91,7 +91,6 @@ assert.throws(() => { LSL(0, D0); }, /range/);
 assert.throws(() => { LSL(9, D0); }, /range/);
 
 state.reset();
-state.quiet = false;
 MOVE.B(2, D0);
 MOVEQ(60, D1);
 LSR.L(D0, D1);
@@ -245,6 +244,8 @@ MOVE.W([A0,D0.W],D1);
 state.access_mem = memmock([[16, const32(6), undefined]]);
 MOVE.W([A0,D0],D1);
 
+state.access_mem = memmock([[32, const32(4), undefined]]);
+MOVE.L([4], A6);
 
 state.access_mem = memmock([[8, const32(0), const8(42)]]);
 MOVE.B(42,[A1]);
@@ -287,6 +288,17 @@ state.access_mem = memmock([[32, const32(26), const32(42)]]);
 MOVE.L(42, [A7,'-']);
 assert.deepEqual(state[A7], const32(26));
 
+// MOVEM
+state.reset();
+MOVE.L(16, A7);
+MOVE.L(0, D0);
+MOVE.L(1, D1);
+MOVE.L(2, D2);
+state.access_mem = memmock([[32, const32(12), const32(2)],[32, const32(8), const32(1)],[32, const32(4), const32(0)]]);
+MOVEM.L([D0,D1,D2], [A7, '-']);
+state.access_mem = memmock([[32, const32(4), undefined],[32, const32(8), undefined],[32, const32(12), undefined]]);
+MOVEM.L([A7, '+'], [D3, D4, D5]);
+
 //
 // Default memory handling
 //
@@ -319,3 +331,6 @@ MOVE.L(42, A0)
 MOVE.L(10, D0)
 LEA([A0,D0], A1);
 assert.deepEqual(52, state[A1].real_value());
+
+MOVEM.L([D0, D5, A0, A1, A2], [A7, '-'])
+MOVEM.L([D0, D1, D2, D3, D4, D5, D6, D7, A0, A1, A2, A3, A4, A5, A6, A7], [A7, '-'])
