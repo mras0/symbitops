@@ -2495,7 +2495,8 @@ global.c2p_step4 = function (n, m) {
 },{"./m68k.js":8,"assert":1}],11:[function(require,module,exports){
 // TODO:
 //          Labels (to allow real instruction encoding)
-//          Handle dN.w/dN.l - as optional arg in list (if .l)? Could be handled same as scale..
+//          SP as synonym for A7
+//          Many instructions / variations / corner cases
 
 const assert = require('assert');
 
@@ -2903,14 +2904,14 @@ class Operand {
             case OP_DISP16:
                 return this.val[0] + '(A' + this.val[1] + ')';
             case OP_INDEX:
-                return this.val[0] + '(A' + this.val[1] + ',D' + this.val[2] + ')';
+                return this.val[0] + '(A' + this.val[1] + ',D' + this.val[2] + (this.val[3] ? '.L' : '') + ')';
             case OP_ABSW:
             case OP_ABSL:
                 return this.val.toString();
             case OP_DISP16PC:
                 return this.val[0] + '(PC)';
             case OP_INDEXPC:
-                return this.val[0] + '(PC,D' + this.val[1] + ')';
+                return this.val[0] + '(PC,D' + this.val[1] + (this.val[2] ? '.L' : '') + ')';
             case OP_IMMEDIATE:
                 return '#' + this.val.toString();
             case OP_REGLIST:
@@ -2963,7 +2964,7 @@ class Operand {
             case OP_DISP16:
                 return [0b101, this.val[1], this.val[0].value() & 0xffff];
             case OP_INDEX:
-                return [0b110, this.val[1], this.val[2] << 12 | this.val[0].value() & 0xff];
+                return [0b110, this.val[1], this.val[2] << 12 | (this.val[3] ? 1 << 11 : 0) | this.val[0].value() & 0xff];
             case OP_ABSW:
                 break;
             case OP_ABSL:
@@ -2974,7 +2975,7 @@ class Operand {
             case OP_DISP16PC:
                 return [0b111, 0b010, this.val[0].value() - 2 & 0xffff];
             case OP_INDEXPC:
-                return [0b111, 0b011, this.val[1] << 12 | this.val[0].value() - 2 & 0xff];
+                return [0b111, 0b011, this.val[1] << 12 | (this.val[2] ? 1 << 11 : 0) | this.val[0].value() - 2 & 0xff];
             case OP_IMMEDIATE:
                 {
                     let val = this.val.value();
@@ -3014,14 +3015,14 @@ class Operand {
             case OP_DISP16:
                 return '[A' + this.val[1] + ', ' + this.val[0].to_code() + ']';
             case OP_INDEX:
-                return '[A' + this.val[1] + ', D' + this.val[2] + ', ' + this.val[0].to_code() + ']';
+                return '[A' + this.val[1] + ', D' + this.val[2] + (this.val[3] ? '.L' : '') + ', ' + this.val[0].to_code() + ']';
             case OP_ABSW:
             case OP_ABSL:
                 return '[' + this.val.to_code() + ']';
             case OP_DISP16PC:
                 return '[PC, ' + this.val[0] + ']';
             case OP_INDEXPC:
-                return '[PC, D' + this.val[1] + ', ' + this.val[0].to_code() + ']';
+                return '[PC, D' + this.val[1] + (this.val[2] ? '.L' : '') + ', ' + this.val[0].to_code() + ']';
             case OP_IMMEDIATE:
                 return this.val.to_code();
             case OP_REGLIST:
@@ -3109,13 +3110,22 @@ class Operand {
                 return [line, new Operand(OP_DISP16, [offset, basereg])];
             }
         }
-        assert.equal(args.length, 2);
-        assert.equal(args[1][0], 'D');
+        if (args.length !== 2 || args[1][0] !== 'D') {
+            throw new Error('Invalid effective address: ' + origline);
+        }
         let indexreg = parseInt(args[1][1]);
+        let adj = [];
+        if (args[1].length > 2) {
+            if (args[1].length === 4 && args[1][2] === '.' && (args[1][3] === 'W' || args[1][3] === 'L')) {
+                if (args[1][3] === 'L') adj = ['L'];
+            } else {
+                throw new Error('Invalid effective address: ' + origline);
+            }
+        }
         if (basereg === 8) {
-            return [line, new Operand(OP_INDEXPC, [offset, indexreg])];
+            return [line, new Operand(OP_INDEXPC, [offset, indexreg].concat(adj))];
         } else {
-            return [line, new Operand(OP_INDEX, [offset, basereg, indexreg])];
+            return [line, new Operand(OP_INDEX, [offset, basereg, indexreg].concat(adj))];
         }
     }
 };
@@ -3470,6 +3480,10 @@ let instruction_info = {
         operands: [OP_DREG],
         cost: function (size, ops) {
             return 4;
+        },
+        encode: function (size, ops) {
+            assert(ops.length === 1 && ops[0].type === OP_DREG);
+            return [0x4800 | (size === 'L' ? 0b011 : 0b010) << 6 | ops[0].val];
         }
     },
 
@@ -3491,6 +3505,10 @@ let instruction_info = {
         operands: [OP_DREG],
         cost: function (size, ops) {
             return BASE_COST;
+        },
+        encode: function (size, ops) {
+            assert(size === 'W' && ops.length === 1 && ops[0].type === OP_DREG);
+            return [0x4840 | ops[0].val];
         }
     },
 

@@ -127,6 +127,11 @@ testIParse('moveq   #2+3, d0', 'MOVEQ', 'L', [[OP_IMMEDIATE, new BinExpr('+', ne
 testIParse('moveq   #5-4+1, d0', 'MOVEQ', 'L', [[OP_IMMEDIATE, new BinExpr('+', new BinExpr('-', new LitExpr(5), new LitExpr(4)), new LitExpr(1))],[OP_DREG,0]]);
 testIParse('lsr     #1+2*3, d0', 'LSR', 'W', [[OP_IMMEDIATE, new BinExpr('+', new LitExpr(1), new BinExpr('*', new LitExpr(2), new LitExpr(3)))],[OP_DREG,0]]);
 
+testIParse('move    $72(a0,d0.w), d1', 'MOVE', 'W', [[OP_INDEX, [new LitExpr(0x72), 0, 0]],[OP_DREG, 1]]);
+testIParse('move    $72(a0,d0.l), d1', 'MOVE', 'W', [[OP_INDEX, [new LitExpr(0x72), 0, 0, 'L']],[OP_DREG, 1]]);
+testIParse('move    $72(pc,d0.w), d1', 'MOVE', 'W', [[OP_INDEXPC, [new LitExpr(0x72), 0]],[OP_DREG, 1]]);
+testIParse('move    $72(pc,d0.l), d1', 'MOVE', 'W', [[OP_INDEXPC, [new LitExpr(0x72), 0, 'L']],[OP_DREG, 1]]);
+
 assert.equal('MOVEM.L\tD0-D2/D4/D6-A3, -(A7)', Instruction.parse('movem.l d0-d2/d4/d6-d7/a0-a3,-(a7)')[1].toString());
 
 let testICost = function(text, expectedCost) {
@@ -235,6 +240,8 @@ testEncode('sub.l   a3, d7',                [0x9e8b]);
 testEncode('lea     $1234(a1), a2',         [0x45e9, 0x1234]);
 testEncode('lea     $10(pc), a0',           [0x41fa, 0x000e]);
 testEncode('lea     $0(pc,d0), a1',         [0x43fb, 0x00fe]);
+testEncode('lea     $10(pc,d0.l), a0',      [0x41fb, 0x080e]);
+testEncode('lea     $12(a2,d1.l), a3',      [0x47f2, 0x1812]);
 // AND
 testEncode('and     d1, d2',                [0xc441]);
 testEncode('and.l   d2, d3',                [0xc682]);
@@ -289,8 +296,11 @@ testEncode('subx.l  d2, d3',                [0x9782]);
 // TST
 testEncode('tst     d0',                    [0x4a40]);
 testEncode('tst.b   $1234(a2)',             [0x4a2a, 0x1234]);
-
-
+// SWAP
+testEncode('swap    d2',                    [0x4842]);
+// EXT
+testEncode('ext     d0',                    [0x4880]);
+testEncode('ext.l   d2',                    [0x48C2]);
 
 // A bunch of code fragments, some from amycoders
 let code0=`
@@ -545,6 +555,8 @@ testCodegen('move   $1234(a1,d2), d0'           , 'MOVE.W([A1, D2, 4660], D0)');
 testCodegen('add.b  (offset+2)*s(a4,d1), d2'    , 'ADD.B([A4, D1, (offset+2)*s], D2)');
 testCodegen('move.l $10(pc), d0'                , 'MOVE.L([PC, 16], D0)');
 testCodegen('move.b 1(pc,d0), d1'               , 'MOVE.B([PC, D0, 1], D1)');
+testCodegen('move   4(a2,d1.l), d0'             , 'MOVE.W([A2, D1.L, 4], D0)');
+testCodegen('move.b -2(pc,d0.l), d0'            , 'MOVE.B([PC, D0.L, -2], D0)');
 testCodegen('move.w #blah, addr'                , 'MOVE.W(blah, [addr])');
 testCodegen('move.w #blah, addr'                , 'MOVE.W(blah, [addr])');
 testCodegen('move.w #10, 42+2*4+x'              , 'MOVE.W(10, [42+2*4+x])');
